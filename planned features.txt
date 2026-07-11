@@ -246,3 +246,121 @@ Issue: When a boss telegraphs an attack, the next turn forces a hardcoded hashta
 Bug: This ignores the boss's actual ability list. Even if you fought a custom boss that doesn't have the "Inferno" ability, the telegraph will spawn this hardcoded Inferno attack out of thin air.
 
 Fix: Modify the telegraph execution to pull the highest-power magic or physical ability directly from the boss's active $e.Abilities list.
+
+🛠️ Optimizing the 3D-Render Engine (NetSec-Safe & Pure PowerShell)
+
+To create a rendering experience that matches the performance of classic 90s FPS games (like Wolfenstein 3D or Doom) while staying strictly within a restricted, NetSec-safe, managed PowerShell 5.1 environment, we must optimize how lines of text are painted.
+
+1. Viewport Size vs. ASCII Detail Resolution
+
+The detail resolution of an ASCII render is directly tied to the viewport size. However, increasing viewport width is a double-edged sword:
+
+The Math: If your viewport is $56 \times 24$ cells, you are rendering $1,344$ characters per frame. If you double the width to $112 \times 48$, you must calculate and write $5,376$ characters.
+
+The Performance Wall: Under standard PowerShell Write-Host or [Console]::Write(), printing 5,000 characters piece-by-piece will drop your framerate to 2-4 FPS due to console buffer context switching.
+
+The Sweet Spot: A viewport of $60 \times 24$ (using half-block characters) provides the perfect compromise.
+
+2. High-Performance Double-Buffering (No P/Invoke, No DLLs)
+
+The single biggest cause of lag and flicker is issuing multiple output commands (Write-Host or Write-C) inside a render loop.
+To render at 20-30 FPS natively in PowerShell 5.1 without using unsafe API P/Invokes, you should employ a StringBuilder Double-Buffering strategy. Instead of drawing character-by-character, compile the entire frame into a single, contiguous string using a System.Text.StringBuilder and write it to the terminal screen with one single command.
+
+Here is an optimized rendering framework:
+
+# Create a single global string builder
+$script:RenderBuffer = New-Object System.Text.StringBuilder(8192)
+
+function Render-FrameBuffer {
+    param(
+        [char[,]]$FrameData, 
+        [string[,]]$FgColors, 
+        [string[,]]$BgColors, 
+        [int]$Width, 
+        [int]$Height
+    )
+    
+    $script:RenderBuffer.Clear() | Out-Null
+    
+    # Position cursor at top-left home (ANSI escape sequence: ESC [ H)
+    $esc = [char]0x1b
+    [void]$script:RenderBuffer.Append("$($esc)[H")
+    
+    $currentFg = ""
+    $currentBg = ""
+    
+    for ($y = 0; $y -lt $Height; $y++) {
+        for ($x = 0; $x -lt $Width; $x++) {
+            $char = $FrameData[$y, $x]
+            $fg   = $FgColors[$y, $x]
+            $bg   = $BgColors[$y, $x]
+            
+            # ANSI Optimization: Only emit color-change escape sequences
+            # if the color actually differs from the previous character.
+            if ($fg -ne $currentFg -or $bg -ne $currentBg) {
+                $currentFg = $fg
+                $currentBg = $bg
+                
+                # Apply foreground and background colors in a single ANSI sequence
+                [void]$script:RenderBuffer.Append("$($esc)[38;5;$($fg);48;5;$($bg)m")
+            }
+            [void]$script:RenderBuffer.Append($char)
+        }
+        # Clear formatting at end of line and add newline
+        $currentFg = ""
+        $currentBg = ""
+        [void]$script:RenderBuffer.Append("$($esc)[0m`n")
+    }
+    
+    # Write the entire frame buffer to stdout in a single write operation
+    [Console]::Write($script:RenderBuffer.ToString())
+}
+
+
+3. Implementing True 3D DDA (Digital Differential Analysis) Raycasting
+
+The current engine uses a layer-based distance approach, which works like old pseudo-3D dungeon crawlers but is not a true raycaster. To achieve a Wolfenstein 3D engine style, we must implement a Digital Differential Analysis (DDA) algorithm.
+
+A DDA raycaster works by stepping a ray through a grid map, checking for wall intersections.
+
+The Core Math of a PowerShell Raycaster:
+
+For each vertical column of the viewport (from $0$ to Width - 1):
+
+Ray Angle: Calculate the angle of the ray based on the player's direction and field of view (FOV).
+$$\text{RayAngle} = \text{PlayerAngle} + \text{FOV} \times \left( \frac{\text{Column}}{\text{Width} - 0.5} \right)$$
+
+Ray Stepping (DDA): Find the distance to the next horizontal and vertical grid lines, then step the ray forward along the grid step-by-step.
+
+# Delta distance the ray has to travel to go from 1 grid line to the next
+$deltaDistX = [math]::Abs(1 / [math]::Cos($rayAngle))
+$deltaDistY = [math]::Abs(1 / [math]::Sin($rayAngle))
+
+
+Fish-Eye Correction: To avoid the "fish-eye lens" distortion where flat walls look curved, multiply the ray distance by the cosine of the angle relative to the player's view direction.
+$$\text{CorrectedDistance} = \text{RayDistance} \times \math.cos(\text{RayAngle} - \text{PlayerAngle})$$
+
+Wall Height Projection: The height of the wall on the screen is inversely proportional to the distance.
+$$\text{WallHeight} = \frac{\text{ViewportHeight}}{\text{CorrectedDistance}}$$
+
+Distance-Based Lighting (Depth Fogging): Color the wall strip with brighter colors if near, and scale down to darker shades at a distance.
+
+4. Doubling Vertical Resolution using Half-Block Textures
+
+A classic limitation of terminal text-grids is that characters are roughly $2:1$ tall (aspect ratio of height to width).
+To combat this and double your rendering detail without increasing text rows, you can use Unicode Half-Blocks (▀ and ▄).
+By encoding two separate horizontal pixels into a single character cell (where the top half of the block is colored with pixel $A$ and the bottom half with pixel $B$), you can double your engine's vertical detail resolution. This creates a remarkably crisp, dense 3D viewport that renders at native speeds.
+
+# Using half-blocks to combine two vertical pixels in a single write
+# Foreground color maps to the top pixel, Background color maps to the bottom pixel.
+$topPixelColor = "196" # Red
+$botPixelColor = "235" # Dark Gray
+$halfBlockChar = [char]0x2580 # '▀'
+
+# Write-Host will draw a cell with a Red top half and a Dark Gray bottom half!
+Write-Host -NoNewline "$($esc)[38;5;$($topPixelColor);48;5;$($botPixelColor)m$($halfBlockChar)"
+
+
+Implementing this double-buffering template, true DDA geometry intersection, and half-block vertical packing results in a NetSec-safe, blazing fast 3D engine inside native PowerShell 5.1!
+
+
