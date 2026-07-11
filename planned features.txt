@@ -137,3 +137,51 @@ Final Reminders to the AI
 Ask, don't guess. If anything above is unclear or you're unsure how it should interact with existing systems, ask me before implementing. If you think a change or addition is bad or ruins the scope of the game tell me. Identify changes that will need to be made to existing gameplay features to support changes (EX: With the quest system, it changes the gameplay loop so the qualifer for new game plus would need to be changed since the player does more than endlessly clear dungeons)
 Hunt for bugs. Thoroughly review all code for bugs, edge cases, and regressions before considering any feature shipped.
 If you'd like, suggest a recommended implementation order for these features and ask me to confirm before starting.
+
+🔴 High Severity (Exploits & Soft-Locks)
+
+1. Frugal Mutator Inventory Overflow
+
+Location: Reset-MutatorOnEnd
+Issue: When the "Frugal Run" mutator is active, the game stashes the player's potions at the dungeon entrance and restores them upon exiting. However, the restoration loop blindly adds the stashed items back to the $script:Potions array without checking the 10-potion maximum capacity.
+Exploit: If a player enters a Frugal Run with 10 potions, finds/buys new potions during the run, and clears the dungeon, the stashed potions are appended to the newly found ones. This allows the player to permanently bypass the 10-potion inventory limit and carry an infinite number of potions.
+
+2. Extra Strong Potion Cap Bypass
+
+Location: Start-Combat (Boss Loot Phase) and Enter-Dungeon (Dungeon Clear)
+Issue: When a boss drops an Extra Strong Potion, the script checks if the player has enough Carry Weight ($curWt + 1 -le $maxWt), but entirely forgets to check the Potion Bag Cap ($script:Potions.Count -lt 10).
+Exploit: Just like the Frugal Mutator bug, this allows players to exceed the 10-potion hard cap if they have available carry weight.
+
+3. Permanent Stat Skewing on Dutchman Penalty
+
+Location: Start-RandomEncounter (Flying Dutchman logic)
+Issue: If a player loses the Dutchman's coin toss, they lose 2 levels. The script attempts to roll back their stats proportionally using hardcoded flat values (e.g., subtracting 10 MaxHP, 5 MaxMP, 2 ATK per level).
+Bug: Class stats do not grow at these flat rates. For example, a Mage gains 0 base MaxHP per level (relying on talents for HP), while a Brawler gains 8. If a Mage loses the coin toss, the game subtracts 20 MaxHP, permanently crippling the character's base stats beyond their intended class template.
+
+🟡 Medium Severity (Gameplay & Combat Logic)
+
+4. Brawler "Berserk" Talent is Static
+
+Location: Start-Combat & Get-PlayerCrit
+Issue: The Brawler's Tier 3 talent (Berserk) grants +40% critical hit chance when below 25% HP. However, the combat loop only evaluates $playerCritChance once at the very beginning of the encounter.
+Bug: If a Brawler drops below 25% HP during a fight, they do not get the +40% crit buff. Conversely, if they start the fight below 25% HP and immediately heal to full, they retain the massive +40% crit buff for the rest of the encounter.
+
+5. Pacifist Mutator Ignores Town Quests
+
+Location: Update-QuestProgress
+Issue: The "Pacifist's Path" mutator is supposed to grant 3x XP for completed quests. The multiplier is applied at the exact moment Update-QuestProgress fires, checking if Has-Mutator "Pacifist" is true.
+Bug: The "Repair gear at the blacksmith" quest can only be completed in Town. Because mutators are completely wiped by Reset-MutatorOnEnd before the player returns to town, Blacksmith quests will never receive the 3x Pacifist XP bonus.
+
+🟢 Low Severity (UI & Edge Cases)
+
+6. Blackjack "Double Down" Bust Notification
+
+Location: Start-Blackjack
+Issue: If a player chooses to Double Down, the script deals one card, flags $doubled = $true, and immediately sets $playerStanding = $true to end their turn.
+Bug: Because the turn ends immediately without looping back to the top of the while(-not $playerStanding) loop, the immediate Write-CL "  BUST!" UI prompt is skipped if the double-down card pushes them over 21. The game still correctly deducts their gold and logs the loss in the final results summary, but the player misses the real-time visual feedback of busting.
+
+7. Boss "Inferno" Telegraph Override
+
+Location: Start-Combat (Boss telegraph execution)
+Issue: When a boss telegraphs an attack, the next turn forces a hardcoded hashtable: $forcedBossAbility = @{Name="Inferno";Power=25;Type="Magic"}.
+Bug: This ignores the boss's actual ability list. Even if you theoretically fought a boss that doesn't have the "Inferno" ability, the telegraph will spawn this hardcoded Inferno attack out of thin air.
