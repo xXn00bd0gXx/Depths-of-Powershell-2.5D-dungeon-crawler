@@ -1,0 +1,535 @@
+# Standalone 3D DDA Raycaster Tech Demo with Wall Textures & Sprites
+# Save this as raycaster.ps1 and run in standard PowerShell console.
+
+# Set output encoding to UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$Host.UI.RawUI.WindowTitle = "PowerShell 3D DDA Raycaster Demo - Textured Edition"
+
+# Clear host and hide cursor
+Clear-Host
+$cursorVisible = $true
+try { $cursorVisible = [Console]::CursorVisible; [Console]::CursorVisible = $false } catch {}
+
+# --- VIEWPORT WINDOW INITIALIZATION ---
+# Programmatically configure console window size to prevent scrolling jitter
+try {
+    if ($env:OS -eq "Windows_NT") {
+        $winWidth = 85
+        $winHeight = 32
+        if ([Console]::BufferWidth -lt $winWidth) { [Console]::BufferWidth = $winWidth }
+        if ([Console]::BufferHeight -lt $winHeight) { [Console]::BufferHeight = $winHeight }
+        [Console]::SetWindowSize($winWidth, $winHeight)
+    }
+} catch {}
+
+# --- MAP DEFINITION ---
+# 1 = Wall, 0 = Empty space
+$map = @(
+    @(1,1,1,1,1,1,1,1,1,1),
+    @(1,0,0,0,0,0,0,0,0,1),
+    @(1,0,1,1,0,1,1,0,0,1),
+    @(1,0,1,0,0,0,1,0,0,1),
+    @(1,0,0,0,0,0,0,0,0,1),
+    @(1,0,1,0,0,0,1,1,0,1),
+    @(1,0,1,1,0,1,1,0,0,1),
+    @(1,0,0,0,0,0,0,0,0,1),
+    @(1,0,0,0,0,0,0,0,0,1),
+    @(1,1,1,1,1,1,1,1,1,1)
+)
+$mapHeight = $map.Count
+$mapWidth = $map[0].Count
+
+# --- SPRITES DEFINITION ---
+# Procedural 12x12 textures: 0 = transparent, other values = 8-bit ANSI colors
+$enemyTex = @(
+    @(0,0,0,0,124,124,124,124,0,0,0,0),          # Hood / Hat (Dark Red: 124)
+    @(0,0,0,124,124,124,124,124,124,0,0,0),
+    @(0,0,124,124,40,124,124,40,124,124,0,0),       # Green skin (40)
+    @(0,0,124,40,160,40,40,160,40,124,0,0),     # Glowing Eyes (160)
+    @(0,0,124,40,40,224,224,40,40,124,124,0),   # Fangs (Light Yellow: 224)
+    @(0,124,124,40,40,224,224,40,40,124,124,0),
+    @(0,0,0,124,124,196,196,124,124,0,0,0),       # Bright Red collar (196)
+    @(0,0,124,124,196,196,196,196,124,124,0,0),   # Clothes / Robe
+    @(0,124,124,40,196,196,196,196,40,124,124,0), # Hands
+    @(0,124,0,0,196,196,196,196,0,0,124,0),     # Boots / Cloak
+    @(0,0,0,0,196,0,0,196,0,0,0,0),
+    @(0,0,0,0,237,0,0,237,0,0,0,0)               # Shadows (Darkest Gray: 237)
+)
+
+$chestTex = @(
+    @(0,0,0,94,94,94,94,94,94,0,0,0),            # Top Wood Lid (Dark Brown: 94)
+    @(0,0,94,130,130,220,220,130,130,94,0,0),    # Wood panel body (Orange Brown: 130)
+    @(0,94,130,130,130,220,220,130,130,130,94,0),
+    @(94,130,130,130,130,220,220,130,130,130,130,94),
+    @(94,94,94,94,94,94,94,94,94,94,94,94),      # Horizontal metal trim
+    @(130,130,130,130,235,235,235,235,130,130,130,130), # Lock outline (Black-gray: 235)
+    @(130,130,130,130,235,220,220,235,130,130,130,130), # Gold Keyhole (220)
+    @(130,220,130,130,235,235,235,235,130,130,220,130), # Gold Corner reinforcements
+    @(94,220,94,94,94,94,94,94,94,94,220,94),
+    @(94,220,130,130,130,130,130,130,130,130,220,94),
+    @(94,94,94,94,94,94,94,94,94,94,94,94),
+    @(0,234,234,234,234,234,234,234,234,234,234,0)   # Floor Shadow
+)
+
+# World objects (X, Y coordinate matching map grid)
+$sprites = @(
+    @{X = 3.5; Y = 3.5; Texture = "Enemy"; Dist = 0.0},
+    @{X = 8.5; Y = 1.5; Texture = "Chest"; Dist = 0.0},
+    @{X = 4.5; Y = 8.5; Texture = "Enemy"; Dist = 0.0}
+)
+
+# --- PLAYER STATE ---
+$px = 1.5; $py = 1.5   # Player position (float)
+$pa = 0.0              # Player angle (radians)
+$fov = [math]::PI / 3  # 60 degrees Field of View
+
+# --- SCREEN CONFIG (Comfortably fits standard 30-line tall consoles without scrolling) ---
+$screenWidth = 80
+$screenHeight = 24     # Decreased to 24 characters to safely avoid scrolling jitter
+
+# --- RENDER BUFFER ---
+$buffer = New-Object System.Text.StringBuilder(12288)
+$esc = [char]0x1b
+
+# --- HELPER FUNCTIONS ---
+function Get-MapCell($x, $y) {
+    $ix = [int][math]::Floor($x)
+    $iy = [int][math]::Floor($y)
+    if ($ix -lt 0 -or $ix -ge $mapWidth -or $iy -lt 0 -or $iy -ge $mapHeight) { return 1 }
+    return $map[$iy][$ix]
+}
+
+# Real-time depth shaded colors based on distance to player
+function Get-ShadedColor($color, $dist) {
+    $cVal = [int]$color
+    if ($dist -lt 2.0) { return $color }
+
+    # Stone Greys (240..250)
+    if ($cVal -ge 240 -and $cVal -le 250) {
+        $reduction = [int]($dist * 1.5)
+        $newColor = $cVal - $reduction
+        if ($newColor -lt 232) { return "232" }
+        return [string]$newColor
+    }
+    # Brick Red (124 / 196 / 88)
+    if ($cVal -eq 124 -or $cVal -eq 196 -or $cVal -eq 88) {
+        if ($dist -lt 4.0) { return "88" }
+        if ($dist -lt 7.0) { return "52" }
+        return "233"
+    }
+    # Gold Tones (220 / 172)
+    if ($cVal -eq 220 -or $cVal -eq 172) {
+        if ($dist -lt 4.0) { return "172" }
+        if ($dist -lt 7.0) { return "130" }
+        return "233"
+    }
+    # Brown Wood Tones (94 / 130 / 52)
+    if ($cVal -eq 94 -or $cVal -eq 130 -or $cVal -eq 52) {
+        if ($dist -lt 4.0) { return "94" }
+        if ($dist -lt 7.0) { return "52" }
+        return "233"
+    }
+    # Green Moss (34 / 28 / 22)
+    if ($cVal -eq 34 -or $cVal -eq 28 -or $cVal -eq 22) {
+        if ($dist -lt 4.0) { return "28" }
+        if ($dist -lt 7.0) { return "22" }
+        return "233"
+    }
+    # Dark shadow/crevice
+    if ($cVal -eq 235 -or $cVal -eq 237) {
+        if ($dist -lt 6.0) { return "233" }
+        return "232"
+    }
+
+    return $color
+}
+
+# Clean exits
+function Exit-Demo {
+    try { [Console]::CursorVisible = $cursorVisible } catch {}
+    Clear-Host
+    Write-Host "Demo Terminated. Thanks for exploring the depths!" -ForegroundColor Green
+    Exit
+}
+
+# --- MAIN ENGINE LOOP ---
+$running = $true
+$clock = [System.Diagnostics.Stopwatch]::StartNew()
+$lastTime = $clock.ElapsedMilliseconds
+
+while ($running) {
+    # 1. TIMING & FPS CALCULATION
+    $currentTime = $clock.ElapsedMilliseconds
+    $elapsed = $currentTime - $lastTime
+    
+    # Target exactly 10 FPS (100ms per frame)
+    if ($elapsed -lt 100) {
+        Start-Sleep -Milliseconds 10
+        continue
+    }
+    $lastTime = $currentTime
+    $fps = [int](1000 / $elapsed)
+
+    # 2. KEYBOARD INPUT (Real-time, Non-blocking, Drained Buffer)
+    if ([Console]::KeyAvailable) {
+        $key = [Console]::ReadKey($true).Key
+        $moveStep = 0.16
+        $rotStep = 0.08  # Smoother turning rate
+
+        switch ($key) {
+            "W" {
+                $nx = $px + [math]::Cos($pa) * $moveStep
+                $ny = $py + [math]::Sin($pa) * $moveStep
+                if ((Get-MapCell $nx $py) -eq 0) { $px = $nx }
+                if ((Get-MapCell $px $ny) -eq 0) { $py = $ny }
+            }
+            "S" {
+                $nx = $px - [math]::Cos($pa) * $moveStep
+                $ny = $py - [math]::Sin($pa) * $moveStep
+                if ((Get-MapCell $nx $py) -eq 0) { $px = $nx }
+                if ((Get-MapCell $px $ny) -eq 0) { $py = $ny }
+            }
+            "A" {
+                $pa -= $rotStep
+                if ($pa -lt 0) { $pa += [math]::PI * 2 }
+            }
+            "D" {
+                $pa += $rotStep
+                if ($pa -gt [math]::PI * 2) { $pa -= [math]::PI * 2 }
+            }
+            "Escape" {
+                $running = $false
+            }
+        }
+
+        # DRAIN REMAINDER OF BUFFER: Prevents character continuing to spin/glide!
+        while ([Console]::KeyAvailable) {
+            [Console]::ReadKey($true) | Out-Null
+        }
+    }
+
+    # 3. BUILD FRAME BUFFER
+    $buffer.Clear() | Out-Null
+    
+    # Stable double-buffering home position: teleport cursor back to top-left via .NET
+    # This prevents scrolling artifacts completely when viewport + HUD matches window size
+    try {
+        [Console]::SetCursorPosition(0, 0)
+    } catch {
+        [void]$buffer.Append("$esc[H")
+    }
+
+    # Double vertical resolution grid
+    # Height of character grid is $screenHeight, but using half-blocks, 
+    # we represent $screenHeight * 2 virtual vertical rows.
+    $virtualHeight = $screenHeight * 2
+
+    # Frame state (color matrices for half-blocks)
+    # Foreground = Top half, Background = Bottom half of character
+    $fgFrame = New-Object "string[]" ($screenWidth * $screenHeight)
+    $bgFrame = New-Object "string[]" ($screenWidth * $screenHeight)
+
+    # Set up Z-Buffer array to track vertical ray depth for sprite occlusion
+    $zBuffer = New-Object "double[]" $screenWidth
+
+    # --- RAYCASTING WALLS WITH PROCEDURAL CLEAN STONE BRICK TEXTURING ---
+    for ($col = 0; $col -lt $screenWidth; $col++) {
+        # Calculate ray angle across FOV
+        $rayAngle = ($pa - $fov / 2) + ($col / $screenWidth) * $fov
+
+        # DDA Setup
+        $sinA = [math]::Sin($rayAngle)
+        $cosA = [math]::Cos($rayAngle)
+
+        # Delta distances
+        $deltaDistX = if ($cosA -eq 0) { 1e30 } else { [math]::Abs(1 / $cosA) }
+        $deltaDistY = if ($sinA -eq 0) { 1e30 } else { [math]::Abs(1 / $sinA) }
+
+        # Initial ray step directions and side distances
+        $mapX = [int][math]::Floor($px)
+        $mapY = [int][math]::Floor($py)
+
+        $sideDistX = 0.0
+        $sideDistY = 0.0
+
+        $stepX = 0
+        $stepY = 0
+
+        if ($cosA -lt 0) {
+            $stepX = -1
+            $sideDistX = ($px - $mapX) * $deltaDistX
+        } else {
+            $stepX = 1
+            $sideDistX = (($mapX + 1.0) - $px) * $deltaDistX
+        }
+
+        if ($sinA -lt 0) {
+            $stepY = -1
+            $sideDistY = ($py - $mapY) * $deltaDistY
+        } else {
+            $stepY = 1
+            $sideDistY = (($mapY + 1.0) - $py) * $deltaDistY
+        }
+
+        # Perform DDA
+        $hit = $false
+        $side = 0 # 0 for X-axis hit, 1 for Y-axis hit
+        $maxDepth = 16.0
+        $dist = 0.0
+
+        while (-not $hit) {
+            if ($sideDistX -lt $sideDistY) {
+                $sideDistX += $deltaDistX
+                $mapX += $stepX
+                $side = 0
+            } else {
+                $sideDistY += $deltaDistY
+                $mapY += $stepY
+                $side = 1
+            }
+
+            # Out of bounds check
+            if ($mapX -lt 0 -or $mapX -ge $mapWidth -or $mapY -lt 0 -or $mapY -ge $mapHeight) {
+                $dist = $maxDepth
+                break
+            }
+
+            # Wall hit
+            if ($map[$mapY][$mapX] -eq 1) {
+                $hit = $true
+                # Calculate distance projected on camera direction (prevents fisheye)
+                if ($side -eq 0) {
+                    $dist = $sideDistX - $deltaDistX
+                } else {
+                    $dist = $sideDistY - $deltaDistY
+                }
+            }
+        }
+
+        # Correct distance for fisheye
+        $correctAngle = $rayAngle - $pa
+        while ($correctAngle -lt -[math]::PI) { $correctAngle += [math]::PI * 2 }
+        while ($correctAngle -gt [math]::PI) { $correctAngle -= [math]::PI * 2 }
+        $dist *= [math]::Cos($correctAngle)
+        if ($dist -lt 0.1) { $dist = 0.1 }
+
+        # Save depth in Z-Buffer for occlusion calculations
+        $zBuffer[$col] = $dist
+
+        # Project wall height
+        $wallHeight = [int]($virtualHeight / $dist)
+        $wallStart = [int](($virtualHeight - $wallHeight) / 2)
+        $wallEnd = $wallStart + $wallHeight
+
+        # Clamp values
+        if ($wallStart -lt 0) { $wallStart = 0 }
+        if ($wallEnd -ge $virtualHeight) { $wallEnd = $virtualHeight - 1 }
+
+        # Calculate exact fractional coordinate where wall was hit
+        if ($side -eq 0) {
+            $wallX = $py + $dist * $sinA
+        } else {
+            $wallX = $px + $dist * $cosA
+        }
+        $wallX -= [math]::Floor($wallX)
+
+        # Map to horizontal texture coordinate on a 16px wide texture grid
+        $texX = [int]($wallX * 16)
+        if ($texX -lt 0) { $texX = 0 }
+        if ($texX -gt 15) { $texX = 15 }
+
+        # Populate vertical column slice in our virtual row grid
+        for ($y = 0; $y -lt $virtualHeight; $y++) {
+            # Find which character row and sub-block half this virtual row maps to
+            $charRow = [math]::Floor($y / 2)
+            $isBottomHalf = (($y % 2) -eq 1)
+            $frameIdx = $charRow * $screenWidth + $col
+
+            # Default colors: sky is pitch black (232), floor is dark stone (233)
+            $pixelColor = if ($y -lt [math]::Floor($virtualHeight / 2)) { "232" } else { "233" }
+
+            # Draw textured walls
+            if ($y -ge $wallStart -and $y -le $wallEnd) {
+                # Determine vertical texture coordinate on a 16px high texture grid
+                $wallHeightVal = ($wallEnd - $wallStart)
+                if ($wallHeightVal -le 0) { $wallHeightVal = 1 }
+                $texY = [int]((($y - $wallStart) / $wallHeightVal) * 16)
+                if ($texY -lt 0) { $texY = 0 }
+                if ($texY -gt 15) { $texY = 15 }
+
+                # CLEAN OFFSET RUNNING BOND STONE BRICK TEXTURE
+                # Horizontal mortar lines are at texY 0 and 8.
+                # Vertical mortar lines offset on alternating row tiers:
+                # - Top tier (0..7): vertical joints at texX 0.
+                # - Bottom tier (8..15): vertical joints at texX 8.
+                $isMortar = ($texY % 8 -eq 0) -or (($texY -lt 8) -and ($texX -eq 0)) -or (($texY -ge 8) -and ($texX -eq 8))
+
+                if ($side -eq 0) {
+                    # RED BRICK OR GRAY MORTAR (X-Hit: running N-S)
+                    if ($isMortar) {
+                        $pixelColor = "235" # Dark mortar grooves
+                    } else {
+                        # Standard grey brick with highlight edges and subtle shading
+                        if ($texX -eq 1 -or $texY -eq 1 -or $texY -eq 9) {
+                            $pixelColor = "250" # Top-left light reflection highlight
+                        } elseif (($texX * $texY) % 7 -eq 0) {
+                            $pixelColor = "240" # Shaded stone variation
+                        } else {
+                            $pixelColor = "244" # Standard stone grey
+                        }
+                    }
+                } else {
+                    # MOSSY BRICK OR MOSSY JOINTS (Y-Hit: running E-W)
+                    if ($isMortar) {
+                        $pixelColor = "28"  # Green moss growing in mortar cracks!
+                    } else {
+                        # Moss patches on stone
+                        if (($texX + $texY) % 5 -eq 0) {
+                            $pixelColor = "34" # Green moss patches on stone face
+                        } elseif ($texX -eq 1 -or $texY -eq 1 -or $texY -eq 9) {
+                            $pixelColor = "246" # Standard highlight
+                        } else {
+                            $pixelColor = "242" # Darker stone base
+                        }
+                    }
+                }
+
+                # Apply distance-based depth shading
+                $pixelColor = Get-ShadedColor $pixelColor $dist
+            }
+
+            # Map the virtual pixel into the half-block matrices
+            if ($isBottomHalf) {
+                $bgFrame[$frameIdx] = $pixelColor
+            } else {
+                $fgFrame[$frameIdx] = $pixelColor
+            }
+        }
+    }
+
+    # --- RENDER SPRITES USING PAINTER'S ALGORITHM, FLOOR ANCHORING, & PROPER SCALING ---
+    # Update sprite distances relative to player's current coordinate
+    foreach ($s in $sprites) {
+        $s.Dist = [math]::Sqrt(($s.X - $px) * ($s.X - $px) + ($s.Y - $py) * ($s.Y - $py))
+    }
+
+    # Sort sprites by distance descending (render furthest first)
+    $sortedSprites = @($sprites | Sort-Object Dist -Descending)
+
+    foreach ($s in $sortedSprites) {
+        $spriteX = $s.X - $px
+        $spriteY = $s.Y - $py
+
+        # Translate sprite angle relative to player FOV
+        $spriteAngle = [math]::Atan2($spriteY, $spriteX) - $pa
+        while ($spriteAngle -lt -[math]::PI) { $spriteAngle += [math]::PI * 2 }
+        while ($spriteAngle -gt [math]::PI) { $spriteAngle -= [math]::PI * 2 }
+
+        $sDist = $s.Dist
+        if ($sDist -lt 0.25) { continue } # Clip objects that are too close
+
+        # Skip rendering if completely behind player viewpoint
+        if ([math]::Cos($spriteAngle) -lt 0) { continue }
+
+        # Projected screen center column coordinate
+        $spriteScreenX = [int](($screenWidth / 2) * (1 + $spriteAngle / ($fov / 2)))
+
+        # PROPER INDIVIDUAL SCALING: Chest (0.4 scale) vs. Enemy (0.75 scale)
+        $scaleX = if ($s.Texture -eq "Chest") { 0.45 } else { 0.75 }
+        $scaleY = if ($s.Texture -eq "Chest") { 0.45 } else { 0.75 }
+
+        $spriteSizeX = [int]($screenWidth / $sDist * $scaleX)
+        $spriteSizeY = [int]($virtualHeight / $sDist * $scaleY)
+        if ($spriteSizeX -le 0 -or $spriteSizeY -le 0) { continue }
+
+        # FLOOR ANCHORING MATHEMATICS:
+        # Align bottom of sprite perfectly with wall bottoms instead of letting them float!
+        # Horizon is at virtualHeight / 2. Projected floor bottom at this distance is:
+        $floorY = [int]($virtualHeight / 2 + ($virtualHeight / (2 * $sDist)))
+
+        $drawEndY = $floorY
+        $drawStartY = $floorY - $spriteSizeY
+
+        # Clamp vertical boundaries safely
+        if ($drawStartY -lt 0) { $drawStartY = 0 }
+        if ($drawEndY -ge $virtualHeight) { $drawEndY = $virtualHeight - 1 }
+
+        # Horizontal column boundaries
+        $drawStartX = [int]($spriteScreenX - $spriteSizeX / 2)
+        $drawEndX = [int]($spriteScreenX + $spriteSizeX / 2)
+        if ($drawStartX -lt 0) { $drawStartX = 0 }
+        if ($drawEndX -ge $screenWidth) { $drawEndX = $screenWidth - 1 }
+
+        $tex = if ($s.Texture -eq "Enemy") { $enemyTex } else { $chestTex }
+        $texSize = 12 # Native matrix width/height is 12x12
+
+        # Draw vertical projection stripes
+        for ($stripe = $drawStartX; $stripe -le $drawEndX; $stripe++) {
+            # Check Z-Buffer (only draw if not occluded by a closer wall)
+            if ($sDist -lt $zBuffer[$stripe]) {
+                # Calculate horizontal texture mapping
+                $spriteWidthVal = ($drawEndX - $drawStartX)
+                if ($spriteWidthVal -le 0) { $spriteWidthVal = 1 }
+                $texX = [int]((($stripe - $drawStartX) / $spriteWidthVal) * $texSize)
+                if ($texX -lt 0) { $texX = 0 }
+                if ($texX -ge $texSize) { $texX = $texSize - 1 }
+
+                for ($y = $drawStartY; $y -le $drawEndY; $y++) {
+                    $spriteHeightVal = ($drawEndY - $drawStartY)
+                    if ($spriteHeightVal -le 0) { $spriteHeightVal = 1 }
+                    $texY = [int]((($y - $drawStartY) / $spriteHeightVal) * $texSize)
+                    if ($texY -lt 0) { $texY = 0 }
+                    if ($texY -ge $texSize) { $texY = $texSize - 1 }
+
+                    $color = $tex[$texY][$texX]
+                    if ($color -eq 0) { continue } # Suppress transparent pixels
+
+                    # Apply distance depth shading to sprite colors
+                    $color = Get-ShadedColor $color $sDist
+
+                    $charRow = [math]::Floor($y / 2)
+                    $isBottomHalf = (($y % 2) -eq 1)
+                    $frameIdx = $charRow * $screenWidth + $stripe
+
+                    if ($isBottomHalf) {
+                        $bgFrame[$frameIdx] = $color
+                    } else {
+                        $fgFrame[$frameIdx] = $color
+                    }
+                }
+            }
+        }
+    }
+
+    # 4. PARSE TO BUFFER WITH ANSI COLOR OPTIMIZATION
+    $lastFg = ""
+    $lastBg = ""
+    for ($charRow = 0; $charRow -lt $screenHeight; $charRow++) {
+        for ($col = 0; $col -lt $screenWidth; $col++) {
+            $frameIdx = $charRow * $screenWidth + $col
+            $fg = $fgFrame[$frameIdx]
+            $bg = $bgFrame[$frameIdx]
+
+            # Only append color switch sequence if state changes
+            if ($fg -ne $lastFg -or $bg -ne $lastBg) {
+                $lastFg = $fg
+                $lastBg = $bg
+                [void]$buffer.Append("$esc[38;5;${fg};48;5;${bg}m")
+            }
+            [void]$buffer.Append([char]0x2580) # Half block character
+        }
+        $lastFg = ""
+        $lastBg = ""
+        [void]$buffer.Append("$esc[0m`n")
+    }
+
+    # 5. RENDER HUD
+    [void]$buffer.Append("$esc[1;33m POSITION: X=$([math]::Round($px, 2)), Y=$([math]::Round($py, 2))  ANGLE: $([math]::Round($pa, 2)) rad`n")
+    [void]$buffer.Append(" RENDER ENGINE: DDA Raycaster (Textured)  FPS: $fps  VIEWPORT: $($screenWidth)x$($screenHeight)`n")
+    [void]$buffer.Append(" CONTROLS: [W/S] Forward/Back  [A/D] Rotate  [ESC] Exit demo`n$esc[0m")
+
+    # Flush full buffer to standard output in a single fast write!
+    [Console]::Write($buffer.ToString())
+}
+
+Exit-Demo
