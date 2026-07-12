@@ -1,366 +1,65 @@
-Before you begin implementing anything, read through this entire document carefully. Do not make assumptions or guess about my intentions. If any feature, mechanic, or requirement is unclear, ambiguous, or could be interpreted in more than one way, stop and ask me clarifying questions first. I would much rather answer questions than have you build something incorrectly.
+# DEPTHS OF POWERSHELL v1.6.2 — A FULL RPG. IN YOUR TERMINAL. NO, REALLY. 🗡️
 
-Additionally, before shipping or finalizing any code, you must thoroughly review it for bugs, logic errors, edge cases, and regressions. Do not consider a task complete until you have actively searched for and addressed potential problems in the code.
+**A real-time 3D dungeon crawler with an open world, a full story campaign, factions, guilds, and a living world meter — written entirely in a single PowerShell script.** No engine. No dependencies. No installer. You paste it into a terminal and a world comes out.
 
-Category 1: Deeper Combat & Character Progression
-Focus: making moment-to-moment gameplay more strategic and rewarding.
-
-1. Multi-Enemy Combat
+Here's what's inside.
 
-Idea: Some dungeon rooms should contain 2–3 enemies instead of only 1v1 encounters, increasing challenge and making strategic targeting important.
-Impact: Enables new ability types — Area-of-Effect (AoE) spells for the Mage/Warlock (e.g., "Chain Lightning," "Firestorm") and cleaving attacks for the Knight/Berserker.
-2. Item Sets & Enchanting
-
-Idea: Introduce powerful gear "sets." Equipping 2, 3, or all 5 pieces of a named set (e.g., "The Archmage's Regalia") grants unique, scaling bonuses stronger than individual items. Add an "Enchanter" NPC to town who, for a high price, can add a random perk to a perk-less item or add a "socket" for a gem.
-Impact: Creates a "treasure hunt" metagame, encouraging players to hunt specific gear across multiple runs to complete their ultimate build.
-3. Enemy Synergies & Roles
-
-Idea: Make enemies work together. Add "support" enemies like a "Goblin Shaman" (heals allies) or a "Skeleton Commander" (grants a defense buff to allies).
-Impact: Transforms combat from a damage race into a tactical puzzle about target prioritization.
-Category 2: Endgame & Replayability
-Focus: giving players reasons to return after "beating" the game.
-
-1. Endless Dungeon Mode
-
-Idea: After the first final-boss kill, unlock "Endless Depths" mode — uncapped dungeon levels with enemies that scale infinitely. Include a leaderboard tracking the deepest floor reached.
-Impact: Provides a true endgame for players who want to push builds to the limit.
-2. Faction Reputation System
-
-Idea: Introduce 2–3 factions (e.g., "The SysAdmin's Guild," "The Rogue Processes," "The Data Miners"). Quests, choices in random encounters, and sparing certain enemies raise or lower reputation.
-Impact: High reputation unlocks unique vendors, gear, quests, or faction companions. Negative reputation triggers dungeon ambushes by faction assassins — adding consequence to player actions.
-3. Persistent Town Upgrades
-
-Idea: Let players spend large sums of gold and rare materials (found deep in dungeons or on bosses) to permanently upgrade town facilities. E.g., upgrading the Blacksmith lowers repair costs; upgrading the Inn provides better resting buffs.
-Impact: Creates a satisfying, visible long-term gold sink and makes the town feel like a home base being built over time.
-Category 3: World & Immersion
-Focus: making the world feel alive and the journey more personal.
+---
 
-1. "Nemesis" System
-
-Idea: Create a unique, named enemy who escapes after its first defeat, then reappears in later dungeons — stronger, with taunting dialogue referencing past encounters.
-Impact: Creates a personal rivalry and recurring antagonist. Defeating the Nemesis permanently yields a unique reward.
-2. Complex, Multi-Stage Quests
+## 🎮 THE ENGINE: REAL-TIME 3D IN A CONSOLE
 
-⚠️ Important: Town Board quests must be kept separate from Main/Side quests.
-Idea: Go beyond simple "kill X / collect Y" quests with quest chains. Example: 1) Find a mysterious map in a chest → 2) Take it to the Guild Hall to be deciphered → 3) The map leads to a specific room in a future dungeon where a guardian must be defeated to claim a unique item.
-Impact: Makes questing feel like an adventure rather than a checklist.
-3. Environmental Hazards & Boons
+The Depths render in a **textured, real-time raycast 3D view** — think classic first-person dungeon crawlers, except every pixel is a console character cell. Free-float movement, animated torchlight flickering across the walls, sliding doors that grind open, coffered ceilings, weathered per-tile brickwork, enemies and chests as scaled sprites growing out of the dark.
 
-Idea: Give some rooms special properties. A "Flooded Room" slows everyone inside; a "Magically-Charged Room" amplifies all magic damage; an "Altar" offers a temporary blessing.
-Impact: Adds tactical consideration to navigation and makes rooms feel distinct.
-Category 4: Themed Zones & Environmental Storytelling
-Currently each floor is mechanically similar. Give floors identities that tell the story of a system falling into chaos as the player descends.
+Every floor is a **41×41 procedurally generated labyrinth** — looping corridors, gated treasure rooms, hazard rooms flooding with coolant or crackling with charge — and every one is verified walkable before you take a step. The final room is **sealed behind red boss doors**, its torches burning **cold blue** so you can read the danger from across the map. Take the key from the mini-boss. Watch the seal slide open. Walk in anyway.
 
-Break the dungeon into thematic zones (every 5–10 levels) with unique descriptions, an environmental quirk, and zone-specific enemy variants:
+(Old-school terminal? A full classic top-down renderer is one setting away. The game auto-detects what your console can do.)
 
-Levels 1–5 — The Server Halls (Current): Clean, cold stone. The "upper level" of the system.
-Levels 6–10 — The Flooded Data-Center: Rooms ankle-deep in glowing, murky coolant; air hums with failing pumps; a blue-ish tint to the 3D view. Enemies: "Corroded Golems," "Short-Circuited Skeletons."
-Levels 11–15 — The Overgrown Archives: Biological corruption; thick pulsating cables like vines; air thick with spores. Enemies: fungal/parasitic.
-Levels 16+ — The Core Meltdown: Final zone. Oppressively hot, glowing cracks in the floor, constant low hum. Introduce minor "ambient heat" damage that ticks every few steps.
-Impact: Creates a powerful sense of progression — the player journeys through distinct, decaying layers of a colossal, forgotten machine.
+## 📜 THE STORY: THE FINAL MIGRATION
 
-Category 5: Interactive Objects & Cryptic Lore
-Zork-style interactivity — let players interact with non-essential objects that dispense lore, hints, or flavor.
+The Depths are being decommissioned — and everything living down there has been marked *will not fix*. The main questline, **THE FINAL MIGRATION**, runs chapter by chapter from the town's Quest Board: cutscenes, escalating goals, a nemesis that remembers you, and an ending where the Migration gets CANCELLED — stamped, filed, and initialed by you.
 
-Flickering Terminal: Screen displays a cryptic error: Process 'Lich King' has no parent. Interacting provides lore about the final boss.
-Forgotten Bookshelf: Rotting tomes; one legible title: "On the Ethics of Soul-Binding Processes." Reading it hints at an enemy's weakness.
-Strange Effigy: Made of discarded RAM sticks and tangled wires, pointing toward the west wall — a clue to a hidden secret.
-Impact: Rewards attentive players and encourages exploration beyond combat and loot.
+And scattered through the dungeon chests: **Marn's Journal** — 15 out-of-order pages from a Guild fieldwalker sent down before you, assembling into a second story as you collect. Complete the set and Marn leaves you something for the trouble.
 
-Category 6: The "SysAdmin" Voice (Lean Into the Theme)
-Double down on the "PowerShell as a fantasy world" theme in every piece of text for a witty, memorable personality.
+Finish the campaign and **NEW GAME+** opens: keep your gold, achievements, talents, and bestiary; the Depths come back 20% meaner per lap.
 
-Enemy Intros: Instead of "A Goblin appears!" → "A rogue 'goblin' process forks itself into your reality. It looks angry and poorly optimized."
-Item Descriptions: A health potion → "A flask of 'health.dll'. Seems stable." (Restores lost data points / HP.) A sword → "A 'Blade' object, sharpened for process termination."
-Death Message: Instead of "You have died" → "FATAL EXCEPTION: Your process has been terminated with exit code 0 (💀). Core dump saved to the ether."
-Impact: Gives the game a consistent, humorous voice that sets it apart.
+## 🗺️ THE OPEN WORLD
 
-Category 7: Narrative Breadcrumb Trail
-Connect the existing "Notes" into a single tragic story.
+Town is just the front door. The **World Map** stretches across cities, camps, and strongholds — **Kernelhold** the capital, **The Registry** where everything is readable (and for sale), **Terminus** the port of endings, frontier camps with nothing but a campfire and bad company. Travel has teeth: ambushes on the road, and every location carries its own **exclusive shop stock** and a **side quest** — one per town, a dozen across the map, from lock-touched thieves' work to things best not written on a board.
 
-Idea: Make all "Note" items pages from the journal of a single previous adventurer, found out of order (e.g., Page 3, then Page 1, then Page 8). The journal details their descent, discoveries, and growing realization of the true nature of the "Lich King."
-Impact: Provides a compelling narrative hook. Finding all pages could lead to discovering that adventurer's "ghost" or a unique item they left behind.
-Category 8: The "Corruption" System — A World That Fights Back
-A global "Corruption" meter (0%–100%) that rises and falls with player actions.
+## ⚖️ FACTIONS & REPUTATION
 
-Increasing Corruption: Defeating major bosses, using powerful "cursed" items, or failing certain quests.
-Decreasing Corruption: Completing "Purification" quests, using rare "stabilizer" items, or defeating the hidden "Orphaned Process" boss.
-Effects of High Corruption: More elite/"mutated" enemies; more dangerous random encounters (Merchant may be replaced by a Thief); altered town/dungeon descriptions ("The air in the town square feels heavy, glitching at the edges of your vision.").
-Effects of Low Corruption: More stable dungeon; "blessed" altars granting boons; better shop prices.
-Why it matters: Creates a feedback loop and a strategic dilemma — "Do I use this incredibly powerful cursed sword, knowing it will make the world more hostile?"
+Two rival networks run the map's underside: the **DATA MINERS** ("Everything is readable. Eventually.") and the **ROGUE PROCESSES** — the code that refused to die. World-map choices and broker jobs move your **reputation from −100 to +100**: drop to −20 and you're **HUNTED**; climb past 25 and you're **HONORED**. Side with one and the other remembers.
 
-Category 9: The World Map & True Exploration
-Expand from Town + Dungeon into a full world.
+HONORED pays real dividends: the Data Miners buy your loot at +10% and their broker **Indexa** opens her private stock in the old capital; the Rogue Processes teach you exits (+5% flee) and **Sig Kill** at Terminus finally deals — including a stray companion who fights at your side.
 
-Idea: The main option becomes "Venture Out," taking the player to a text-based World Map (a grid of travelable locations). The Town Square is just the starting point.
-Locations: The Whispering Woods, The Frostfang Mountains, The Ruined City of Sys-V, The Coastal Port of Terminus.
-Travel: Moving takes in-game time (e.g., "The journey to the Frostfang Mountains takes 3 days.") and can trigger road encounters (ambushes, merchants, quest-givers).
-Content: Each major location has its own "town" (even a small camp), unique NPCs, and themed dungeons (e.g., Frostfang icy caves with frost trolls; Ruined City automated defense golems).
-Category 10: Deep Guild Questlines with Real Consequences
-Make the Guild Hall more than a place to hire help. Let players formally join a Guild, each with a HQ, unique cast, and a full multi-stage questline.
+## 🏛️ THREE GUILDS, THREE QUESTLINES
 
-The SysAdmins' Guild (Lawful): Focused on "purifying" the Depths — recovering lost data artifacts and sealing anomalies. Final reward: master-forged "Firewall" armor.
-The Data-Thieves' Collective (Chaotic Neutral): Operates from the shadows — espionage, stealing schematics, discreetly eliminating rival adventurers. Reward: stealth/lockpicking gear.
-The Cabal of Forgotten Code (Dark): Warlocks and Necromancers who see corruption as a feature, not a bug — harnessing dark power and communicating with rogue processes.
-Category 11: Skill-Based Progression — "Learn by Doing"
-Keep the main Player Level (HP/MP and Talent Points) but add a separate Skill System.
+Inside the Guild Hall, three formal orders each run a multi-stage questline with a signature reward at the end:
 
-Skills: Swords, Bows, Destruction Magic, Restoration Magic, Heavy Armor, Light Armor, Lockpicking, Blacksmithing, Alchemy.
-Progression: Actions grant XP in the relevant skill (each sword hit → Sword XP; each potion brewed → Alchemy XP). Skill levels give small passive bonuses (e.g., +0.5% damage per Sword level, +1% potion effectiveness per Alchemy level).
-Unlocks: Skill milestones (e.g., Blacksmithing Level 50) unlock crafting of unique, powerful gear unavailable in shops.
-Category 12: Radiant & Systemic World Events
-Large-scale temporary events across the whole world, on a timer or triggered by player milestones.
+- **The SysAdmins' Guild** — uptime, order, and the FIREWALL PLATE.
+- **The Data-Thieves' Collective** — "three locks, opened, not broken" — ending in the WHISPERSTEP BOOTS.
+- **The Cabal of Forgotten Code** — warlocks who read the world's rot like release notes. Their first ask: *let the Corruption reach 40. Do not flinch.* Their last gift: permanent power.
 
-"The Goblin Horde": For 3 in-game days, world-map encounters become goblin ambushes and early dungeon floors swarm with them. A special Quest Board bounty appears to "Slay the Goblin Warchief."
-"The Blighted Plague": Plague hits the main town — the Inn closes, potion prices skyrocket. A new quest appears to gather cure ingredients.
-"The Blood Moon": For one night, all undead enemies are 50% stronger but drop double XP and have a higher rare-drop chance.
-Category 13: True Quest / Story
-1. Main Story Quest
+Defecting is allowed. Defecting is not free.
 
-Plan and create a full main story quest, tracked in the save code.
-It should be engaging and funny, featuring varied quest types (fetching items for an NPC, freeing someone, defeating scripted bosses).
-Include cutscenes with ASCII art.
-2. Town Side Quests
+## 🌒 A WORLD THAT REACTS: CORRUPTION & EVENTS
 
-Create a side quest unique to each town that unlocks something special to that town, or a special item — e.g., the Skeleton Key that unlocks every lock perfectly.
+A global **Corruption meter (0–100)** tracks how the war below is going. Die, flee, fail — it rises, and the Depths answer: nastier enemy variants, pack ambushes guarded by shamans, altars that toll instead of bless, and past 60 the kindly wandering merchant stops appearing. *Something else does.* Win — bosses down, hidden boss slain — and the world calms, right down to a discount at the shops.
 
-Category 14:
-1. Add a fishing mini-game available in some towns that have a pond.
+On top of that, the calendar itself turns hostile: **radiant world events** like the **BLOOD MOON** (everything bolder, worth more), the **GOBLIN HORDE** (their Warchief takes over the mini-boss floor — bounty attached), and the **BLIGHTED PLAGUE** (the dead walk in numbers; the Inn quarantines its beds).
 
-Bug Fixes (Required)
-Full-screen option doesn't work.
-Poison potion damage ticks when the player attempts to flee combat, allowing players to cheese every fight. (Flee should not trigger poison ticks.)
-Talent-tree "survive a lethal blow" skills trigger more than once per dungeon — they should be limited to once per dungeon as intended.
+## 🧬 BUILDCRAFT ALL THE WAY DOWN
 
+- **Talent trees** — 9 talents per class in 3 tiers, from lethal-save resurrections to spell echoes.
+- **10 skills that level by doing** — swing swords, pick locks, brew potions, take hits in heavy plate. Every 10 levels pays a tier.
+- **Combat stances**, group fights with target switching, AoE cleaves that arc through whole packs, boss telegraphs you can DEFEND against.
+- **Armor sets** with 2- and 3-piece bonuses — Leather to Dragon to Mythril, every set completable.
+- **Dungeon mutators** — opt-in run modifiers (Glass Cannon, Pacifist's Path, Hardcore...) that pay +20–40% on a clear. Commit-or-die.
+- **Pets, companions, cooking, fishing, blacksmithing, enchanting, sockets** — and a lockpicking minigame with real timing under your fingers.
+- A **hidden boss** for those who go looking. A **bestiary** that remembers every variant you've put down.
 
-Final Reminders to the AI
-Ask, don't guess. If anything above is unclear or you're unsure how it should interact with existing systems, ask me before implementing. If you think a change or addition is bad or ruins the scope of the game tell me. Identify changes that will need to be made to existing gameplay features to support changes (EX: With the quest system, it changes the gameplay loop so the qualifer for new game plus would need to be changed since the player does more than endlessly clear dungeons)
-Hunt for bugs. Thoroughly review all code for bugs, edge cases, and regressions before considering any feature shipped.
-If you'd like, suggest a recommended implementation order for these features and ask me to confirm before starting.
+---
 
-🔴 High Severity (Exploits, Call-Stack Leaks & Soft-Locks)
+**One file. One terminal. A whole world.** Your save is a code you can paste anywhere PowerShell runs.
 
-1. Frugal Mutator Potion Bag Overflow
-
-Location: Reset-MutatorOnEnd
-
-Issue: When the "Frugal Run" mutator is active, the game stashes the player's potions at the dungeon entrance and restores them upon exiting. However, the restoration loop blindly adds the stashed items back to the $script:Potions array without verifying the 10-potion maximum capacity.
-
-Exploit: If a player enters a Frugal Run with 10 potions, finds or buys new potions during the run, and successfully clears the dungeon, the stashed potions are appended directly to the newly found ones. This allows the player to bypass the 10-potion inventory limit indefinitely.
-
-Fix: Check $script:Potions.Count during restoration, or temporarily expand/handle the pouch capacity cleanly.
-
-2. Extra Strong Potion Cap Bypass
-
-Location: Start-Combat (Boss Loot Phase) and Enter-Dungeon (Dungeon Clear)
-
-Issue: When a boss drops an Extra Strong Potion, the script checks if the player has enough Carry Weight ($curWt + 1 -le $maxWt), but entirely forgets to check the Potion Bag Cap ($script:Potions.Count -lt 10).
-
-Exploit: Just like the Frugal Mutator bug, this allows players to exceed the 10-potion hard cap if they have available carry weight.
-
-Fix: Check $script:Potions.Count -lt 10 before adding the item, converting it to gold if the bag is full.
-
-3. The continue Control-Flow Call-Stack Leak
-
-Location: Enter-Dungeon (Death choice processing)
-
-Issue: Inside Enter-Dungeon, when the player dies, they are prompted to choose a restart method. Under Option "2" (Play Again - Same Character), the code executes continue to restart the game loop. However, by the time the player selects this option, the dungeon while loop has already terminated.
-
-Bug: In PowerShell, using continue inside a switch statement that is not nested within an active loop inside the same function will propagate up the call-stack. It searches for an active loop in the parent caller, which in this case is Show-MainMenu. It forces the main menu to jump to its next iteration, bypassing any clean-up code, resetting variables incorrectly, and potentially causing unexpected script termination or state corruption depending on the PowerShell host version.
-
-Fix: Replace the dangling continue with a clean state reset and a return statement, letting the main menu handle the flow properly.
-
-🟡 Medium Severity (Gameplay & Combat Logic)
-
-4. Brawler "Berserk" Talent is Static
-
-Location: Start-Combat & Get-PlayerCrit
-
-Issue: The Brawler's Tier 3 talent (Berserk) grants +40% critical hit chance when below 25% HP. However, the combat loop only evaluates $playerCritChance once at the very beginning of the encounter.
-
-Bug: If a Brawler drops below 25% HP during a fight, they do not get the +40% crit buff. Conversely, if they start the fight below 25% HP and immediately heal to full, they retain the massive +40% crit buff for the rest of the encounter.
-
-Fix: Move $playerCritChance = Get-PlayerCrit $p.SPD $script:LuckBonus inside the active combat round loop so it evaluates dynamically on every action.
-
-5. Pacifist Mutator Ignores Town Quests
-
-Location: Update-QuestProgress
-
-Issue: The "Pacifist's Path" mutator is supposed to grant 3x XP for completed quests. The multiplier is applied at the exact moment Update-QuestProgress fires, checking if Has-Mutator "Pacifist" is true.
-
-Bug: The "Repair gear at the blacksmith" quest can only be completed in Town. Because mutators are completely wiped by Reset-MutatorOnEnd before the player returns to town, Blacksmith quests will never receive the 3x Pacifist XP bonus.
-
-Fix: Store a transient flag or check if the quest was actively progressed during a mutator run, or wait to wipe the mutator until the player leaves town or enters a new dungeon.
-
-6. The Bestiary Backslash Splitting Bug
-
-Location: Show-Bestiary & Start-Combat
-
-Issue: Bestiary entries are tracked with keys formatted with a backslash and tilde separator, e.g., "Goblin\~Frenzied". When displaying the Bestiary, the script splits the key: $parts = $e.Key -split '\~'.
-
-Bug: In PowerShell, the -split operator parses its right-hand operand as a Regular Expression. In regex, \ is the escape character, meaning '\~' is interpreted as an escaped tilde (~). This causes PowerShell to split only on the tilde, leaving the trailing backslash attached to the first part. The resulting $type becomes "Goblin\", displaying visually glitched names like "Frenzied Goblin\" or "Boss\ Lich King" in the Bestiary.
-
-Fix: Use double-backslashes to escape the literal backslash in regex: $parts = $e.Key -split '\\~' or use the string split method directly: $parts = $e.Key.Split('\~').
-
-7. "Treasure" Quest Template Omission
-
-Location: Get-RandomQuests
-
-Issue: The script contains detailed gold and XP reward calculations for a quest of type "Treasure". However, "Treasure" is completely missing from the $templates array.
-
-Bug: Because the template is missing, a "Treasure" quest can never be generated.
-
-Fix: Restore the "Treasure" quest to the $templates array so players can actively receive bounties for finding dungeon chests:
-
-@{Type="Treasure";   DescTemplate="Find and open {0} treasure chests"; TMin=1; TMax=3}
-
-
-8. Dutchman Penalty - Flat vs Scaled Stats
-
-Location: Start-RandomEncounter (Flying Dutchman logic)
-
-Issue: If a player loses the Dutchman's coin toss, they lose 2 levels. The script attempts to roll back their stats proportionally using hardcoded flat values (e.g., subtracting 10 MaxHP, 5 MaxMP, 2 ATK per level).
-
-Bug: While level-up bonuses in this game are currently flat across all classes, modifying these parameters using static values creates coupling that will break if custom class templates are ever introduced.
-
-Fix: Rebuild the player stats programmatically based on their level and class template rather than hardcoding subtraction deltas.
-
-🟢 Low Severity (UI & Edge Cases)
-
-9. Blackjack "Double Down" Bust Notification
-
-Location: Start-Blackjack
-
-Issue: If a player chooses to Double Down, the script deals one card, flags $doubled = $true, and immediately sets $playerStanding = $true to end their turn.
-
-Bug: Because the turn ends immediately without looping back to the top of the while(-not $playerStanding) loop, the immediate Write-CL "  BUST!" UI prompt is skipped if the double-down card pushes them over 21. The game still correctly deducts their gold and logs the loss in the final results summary, but the player misses the real-time visual feedback of busting.
-
-Fix: Add a quick boundary check immediately after the Double Down card is drawn to display the BUST visual if the score exceeds 21.
-
-10. Boss "Inferno" Telegraph Override
-
-Location: Start-Combat (Boss telegraph execution)
-
-Issue: When a boss telegraphs an attack, the next turn forces a hardcoded hashtable: $forcedBossAbility = @{Name="Inferno";Power=25;Type="Magic"}.
-
-Bug: This ignores the boss's actual ability list. Even if you fought a custom boss that doesn't have the "Inferno" ability, the telegraph will spawn this hardcoded Inferno attack out of thin air.
-
-Fix: Modify the telegraph execution to pull the highest-power magic or physical ability directly from the boss's active $e.Abilities list.
-
-🛠️ Optimizing the 3D-Render Engine (NetSec-Safe & Pure PowerShell)
-
-To create a rendering experience that matches the performance of classic 90s FPS games (like Wolfenstein 3D or Doom) while staying strictly within a restricted, NetSec-safe, managed PowerShell 5.1 environment, we must optimize how lines of text are painted.
-
-1. Viewport Size vs. ASCII Detail Resolution
-
-The detail resolution of an ASCII render is directly tied to the viewport size. However, increasing viewport width is a double-edged sword:
-
-The Math: If your viewport is $56 \times 24$ cells, you are rendering $1,344$ characters per frame. If you double the width to $112 \times 48$, you must calculate and write $5,376$ characters.
-
-The Performance Wall: Under standard PowerShell Write-Host or [Console]::Write(), printing 5,000 characters piece-by-piece will drop your framerate to 2-4 FPS due to console buffer context switching.
-
-The Sweet Spot: A viewport of $60 \times 24$ (using half-block characters) provides the perfect compromise.
-
-2. High-Performance Double-Buffering (No P/Invoke, No DLLs)
-
-The single biggest cause of lag and flicker is issuing multiple output commands (Write-Host or Write-C) inside a render loop.
-To render at 20-30 FPS natively in PowerShell 5.1 without using unsafe API P/Invokes, you should employ a StringBuilder Double-Buffering strategy. Instead of drawing character-by-character, compile the entire frame into a single, contiguous string using a System.Text.StringBuilder and write it to the terminal screen with one single command.
-
-Here is an optimized rendering framework:
-
-# Create a single global string builder
-$script:RenderBuffer = New-Object System.Text.StringBuilder(8192)
-
-function Render-FrameBuffer {
-    param(
-        [char[,]]$FrameData, 
-        [string[,]]$FgColors, 
-        [string[,]]$BgColors, 
-        [int]$Width, 
-        [int]$Height
-    )
-    
-    $script:RenderBuffer.Clear() | Out-Null
-    
-    # Position cursor at top-left home (ANSI escape sequence: ESC [ H)
-    $esc = [char]0x1b
-    [void]$script:RenderBuffer.Append("$($esc)[H")
-    
-    $currentFg = ""
-    $currentBg = ""
-    
-    for ($y = 0; $y -lt $Height; $y++) {
-        for ($x = 0; $x -lt $Width; $x++) {
-            $char = $FrameData[$y, $x]
-            $fg   = $FgColors[$y, $x]
-            $bg   = $BgColors[$y, $x]
-            
-            # ANSI Optimization: Only emit color-change escape sequences
-            # if the color actually differs from the previous character.
-            if ($fg -ne $currentFg -or $bg -ne $currentBg) {
-                $currentFg = $fg
-                $currentBg = $bg
-                
-                # Apply foreground and background colors in a single ANSI sequence
-                [void]$script:RenderBuffer.Append("$($esc)[38;5;$($fg);48;5;$($bg)m")
-            }
-            [void]$script:RenderBuffer.Append($char)
-        }
-        # Clear formatting at end of line and add newline
-        $currentFg = ""
-        $currentBg = ""
-        [void]$script:RenderBuffer.Append("$($esc)[0m`n")
-    }
-    
-    # Write the entire frame buffer to stdout in a single write operation
-    [Console]::Write($script:RenderBuffer.ToString())
-}
-
-
-3. Implementing True 3D DDA (Digital Differential Analysis) Raycasting
-
-The current engine uses a layer-based distance approach, which works like old pseudo-3D dungeon crawlers but is not a true raycaster. To achieve a Wolfenstein 3D engine style, we must implement a Digital Differential Analysis (DDA) algorithm.
-
-A DDA raycaster works by stepping a ray through a grid map, checking for wall intersections.
-
-The Core Math of a PowerShell Raycaster:
-
-For each vertical column of the viewport (from $0$ to Width - 1):
-
-Ray Angle: Calculate the angle of the ray based on the player's direction and field of view (FOV).
-$$\text{RayAngle} = \text{PlayerAngle} + \text{FOV} \times \left( \frac{\text{Column}}{\text{Width} - 0.5} \right)$$
-
-Ray Stepping (DDA): Find the distance to the next horizontal and vertical grid lines, then step the ray forward along the grid step-by-step.
-
-# Delta distance the ray has to travel to go from 1 grid line to the next
-$deltaDistX = [math]::Abs(1 / [math]::Cos($rayAngle))
-$deltaDistY = [math]::Abs(1 / [math]::Sin($rayAngle))
-
-
-Fish-Eye Correction: To avoid the "fish-eye lens" distortion where flat walls look curved, multiply the ray distance by the cosine of the angle relative to the player's view direction.
-$$\text{CorrectedDistance} = \text{RayDistance} \times \math.cos(\text{RayAngle} - \text{PlayerAngle})$$
-
-Wall Height Projection: The height of the wall on the screen is inversely proportional to the distance.
-$$\text{WallHeight} = \frac{\text{ViewportHeight}}{\text{CorrectedDistance}}$$
-
-Distance-Based Lighting (Depth Fogging): Color the wall strip with brighter colors if near, and scale down to darker shades at a distance.
-
-4. Doubling Vertical Resolution using Half-Block Textures
-
-A classic limitation of terminal text-grids is that characters are roughly $2:1$ tall (aspect ratio of height to width).
-To combat this and double your rendering detail without increasing text rows, you can use Unicode Half-Blocks (▀ and ▄).
-By encoding two separate horizontal pixels into a single character cell (where the top half of the block is colored with pixel $A$ and the bottom half with pixel $B$), you can double your engine's vertical detail resolution. This creates a remarkably crisp, dense 3D viewport that renders at native speeds.
-
-# Using half-blocks to combine two vertical pixels in a single write
-# Foreground color maps to the top pixel, Background color maps to the bottom pixel.
-$topPixelColor = "196" # Red
-$botPixelColor = "235" # Dark Gray
-$halfBlockChar = [char]0x2580 # '▀'
-
-# Write-Host will draw a cell with a Red top half and a Dark Gray bottom half!
-Write-Host -NoNewline "$($esc)[38;5;$($topPixelColor);48;5;$($botPixelColor)m$($halfBlockChar)"
-
-
-Implementing this double-buffering template, true DDA geometry intersection, and half-block vertical packing results in a NetSec-safe, blazing fast 3D engine inside native PowerShell 5.1!
-
-
+*See you in the Depths. The tickets aren't going to close themselves.* 🔦
