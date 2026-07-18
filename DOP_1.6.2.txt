@@ -136,6 +136,7 @@ $script:Settings = @{
     Renderer   = "Auto"   # Auto / Classic / Raycast — Auto picks Raycast where VT (ANSI) is detected, Classic on bare conhost
     ShowFPS    = $true    # raycast HUD FPS counter — ON by default, toggle in Options
     RotSpeed   = 100      # raycast turn speed percent — 50/75/100/125/150 preset cycle
+    ZoneTheme  = $true    # zone-tinted dungeon visuals — OFF = plain stone everywhere
 }
 
 # ── PHASE 1 FOUNDATIONS (save format v9) ─────────────────────────
@@ -352,14 +353,32 @@ function Get-EquippedArmorMajority {
 }
 
 # +1 DEF per 10 HeavyArmor levels while heavy-majority (max +5).
-function Get-ArmorSkillDEF {
-    if((Get-EquippedArmorMajority) -eq "Heavy"){ return Get-SkillTier "HeavyArmor" }
+# v1.6.2: a MATCHING wardrobe (3+ pieces, every one the same class)
+# pays a flat class bonus on top of the skill tiers — Heavy sets
+# +2 DEF, Light sets +2 SPD.
+function Get-ArmorClassSetBonus {
+    param([string]$Cls)
+    $n = 0
+    foreach($apc in $script:EquippedArmor.Values){
+        if(-not $apc){ continue }
+        if((Get-ArmorWeightClass $apc) -ne $Cls){ return 0 }
+        $n++
+    }
+    if($n -ge 3){ return 2 }
     return 0
+}
+function Get-ArmorSkillDEF {
+    $b = 0
+    if((Get-EquippedArmorMajority) -eq "Heavy"){ $b += Get-SkillTier "HeavyArmor" }
+    $b += Get-ArmorClassSetBonus "Heavy"
+    return $b
 }
 # +1 SPD per 10 LightArmor levels while light-majority (max +5).
 function Get-ArmorSkillSPD {
-    if((Get-EquippedArmorMajority) -eq "Light"){ return Get-SkillTier "LightArmor" }
-    return 0
+    $b = 0
+    if((Get-EquippedArmorMajority) -eq "Light"){ $b += Get-SkillTier "LightArmor" }
+    $b += Get-ArmorClassSetBonus "Light"
+    return $b
 }
 
 # ── Phase 4: Corruption (Cat 8) ────────────────────────────────
@@ -395,7 +414,8 @@ function Get-CorruptionVariantChance {
     return $ch
 }
 function Get-CorruptionGroupChance {
-    $ch = 28 + [math]::Floor($script:Corruption / 5)   # 28-48%
+    # v1.6.2 retune: 18% base, gentler corruption slope (18-30%).
+    $ch = 18 + [math]::Floor($script:Corruption / 8)
     switch(Get-ActiveRadiantEvent){
         "GoblinHorde" { $ch += 15 }
         "BloodMoon"   { $ch += 10 }
@@ -450,11 +470,21 @@ function Get-EventBiasedType {
 }
 
 function Announce-RadiantEvent {
+    # v1.6.2: event windows can CHAIN (a day-13 Blood Moon rolls
+    # straight into a day-14 Goblin Horde), and the banner used to
+    # flip silently — reading like a bug. Transitions are now
+    # called out, including endings.
     $ev = Get-RadiantEventInfo
+    $cur = if($ev){ [string]$ev.Name } else { "" }
+    if($null -eq $script:LastSeenEvent){ $script:LastSeenEvent = "" }
+    if($cur -ne $script:LastSeenEvent -and $script:LastSeenEvent -ne ""){
+        Write-CL "  ... the $($script:LastSeenEvent) has passed." "DarkGray"
+    }
     if($ev){
         Write-CL "  *** $($ev.Name) ***" $ev.Color
         Write-CL "  $($ev.Line)" "DarkGray"
     }
+    $script:LastSeenEvent = $cur
 }
 
 # Permanent shop discount granted by defeating the Orphaned Process.
@@ -855,6 +885,73 @@ function clr {
 # path first ([Console]::KeyAvailable is keydown-filtered at the .NET
 # level), RawUI with BOTH filters as fallback, hard-capped like the
 # fishing minigame's fish-Drain, which documented this trap first.
+# v1.6.2: boxed notice panel — shared style for the display checks
+# and the quit screen (color-coded per purpose).
+function Show-NoticePanel {
+    param([string]$Title, [string[]]$Lines, [string]$Color = "Yellow", [string]$EdgeColor = "DarkYellow")
+    $bar = "═" * 62
+    Write-Host ""
+    Write-CL "  ╔$bar╗" $EdgeColor
+    Write-CL ("  ║ " + $Title.PadRight(60) + " ║") $Color
+    Write-CL "  ╚$bar╝" $EdgeColor
+    Write-Host ""
+    foreach($nl in $Lines){ Write-CL "  $nl" "Gray" }
+    Write-Host ""
+}
+
+# Display checks (v1.6.2): unique panels per renderer. The 3D view
+# resizes the window itself now, so its warning is about ART — on a
+# cramped or odd host, loot banners and encounter art can shear.
+# Classic keeps the original size guidance.
+# v1.6.2: cosmetic 'carving the floor' animation between the entry
+# text screens and the first frame. Pure random noise — it reveals
+# NOTHING of the real layout (fresh symbols every phase).
+function Show-GenerationVisual {
+    try {
+        clr
+        $phases = @("Carving corridors","Raising walls","Wiring the torches","Hiding the loot","Sealing the boss room","Waking the residents")
+        for($gp = 0; $gp -lt $phases.Count; $gp++){
+            try { [Console]::SetCursorPosition(0,1) } catch {}
+            Write-CL "   G E N E R A T I N G   F L O O R   $($script:DungeonLevel)" "Cyan"
+            Write-Host ""
+            for($gy = 0; $gy -lt 10; $gy++){
+                $row = ""
+                for($gx = 0; $gx -lt 44; $gx++){
+                    $gr = Get-Random -Max 10
+                    $row += if($gr -lt 3){"█"} elseif($gr -lt 5){"▓"} elseif($gr -lt 7){"░"} else {" "}
+                }
+                Write-CL "   $row" "DarkGray"
+            }
+            Write-Host ""
+            Write-CL ("   " + $phases[$gp] + "..." + (" " * 30)) "Yellow"
+            Start-Sleep -Milliseconds 320
+        }
+    } catch {}
+    clr
+}
+
+function Show-DisplayCheck {
+    if(Test-RaycastActive){
+        Show-NoticePanel -Title "D I S P L A Y   C H E C K  —  3 D   V I E W" -Color "Cyan" -EdgeColor "DarkCyan" -Lines @(
+            "The 3D view manages its own window size. If your terminal",
+            "fights the resize, expect visual glitches: sheared loot",
+            "banners, broken encounter art, or torn frames.",
+            "",
+            "If art looks broken, enlarge the window — everything",
+            "heals on the next screen."
+        )
+    } else {
+        Show-NoticePanel -Title "D I S P L A Y   C H E C K  —  C L A S S I C   V I E W" -Color "Yellow" -EdgeColor "DarkYellow" -Lines @(
+            "The classic view wants at least 80 columns and 30 rows.",
+            "On a smaller window, screens can wrap and art — loot",
+            "banners, encounters, the map — may come out broken.",
+            "",
+            "Maximize the terminal for the intended experience."
+        )
+    }
+    Wait-Key
+}
+
 function Drain-Keys {
     for($dk = 0; $dk -lt 60; $dk++){
         $any = $false
@@ -2436,6 +2533,9 @@ function New-Dungeon {
                     # or Commander) as the final member — the tactical
                     # "kill the healer first" puzzle from the design doc.
                     $groupSize = Get-Random -Min 2 -Max 4     # 2 or 3 (Max exclusive)
+                    # v1.6.2: packs of FOUR exist only in a deeply
+                    # corrupted world (70+), and even then rarely.
+                    if($script:Corruption -ge 70 -and (Get-Random -Max 100) -lt 25){ $groupSize = 4 }
                     $pack = @()
                     for($gm = 0; $gm -lt $groupSize; $gm++){
                         $isLast = ($gm -eq ($groupSize - 1))
@@ -5348,9 +5448,20 @@ function Start-Combat {
                         Show-EnemyAttackAnim $eDmg
                         $p.HP -= $eDmg
                         # Skill XP (Phase 4): taking hits trains the majority armor class.
+                        # v1.6.2: a MIXED wardrobe used to train nothing
+                        # (no majority -> no grant). Mixed now trains
+                        # each worn class at half rate.
                         switch(Get-EquippedArmorMajority){
                             "Heavy" { Add-SkillXP "HeavyArmor" 2 }
                             "Light" { Add-SkillXP "LightArmor" 2 }
+                            default {
+                                $wornCls = @{}
+                                foreach($apc in $script:EquippedArmor.Values){
+                                    if($apc){ $wornCls[(Get-ArmorWeightClass $apc)] = $true }
+                                }
+                                if($wornCls["Heavy"]){ Add-SkillXP "HeavyArmor" 1 }
+                                if($wornCls["Light"]){ Add-SkillXP "LightArmor" 1 }
+                            }
                         }
                         $script:RunStats.DamageTaken += $eDmg
                         $script:TookDamageThisDungeon = $true
@@ -7538,8 +7649,19 @@ function Show-Market {
                     # Build a unified sellable list. Each entry tracks Source
                     # ("Inv", "Pot", "Throw") and SourceIdx so we can remove from
                     # the correct backing list when a sale completes.
+                    # v1.6.2: items an ACTIVE Collect quest still needs
+                    # cannot be sold out from under the quest.
+                    $qNeedNames = @{}
+                    foreach($qloc in @("backupvale","nullhaven","cachegrove","registry","sysv","foreachfalls","bashford","cronmarch","firewallkeep","syslogxing","kernelhold","terminus")){
+                        $qq = Get-TownQuest $qloc
+                        if($qq -and $qq.Type -eq "Collect" -and $qq.ItemName){
+                            $qst = Get-QuestStage $qq.Id
+                            if($qst -ge 100000 -and $qst -ne 999999){ $qNeedNames[[string]$qq.ItemName] = $true }
+                        }
+                    }
                     $sellList = New-Object System.Collections.ArrayList
                     for($i=0; $i -lt $script:Inventory.Count; $i++){
+                        if($qNeedNames[[string]$script:Inventory[$i].Name]){ continue }
                         [void]$sellList.Add(@{ Item=$script:Inventory[$i]; Source="Inv"; SourceIdx=$i })
                     }
                     for($i=0; $i -lt $script:Potions.Count; $i++){
@@ -11288,6 +11410,9 @@ function Get-RayZonePalette {
     param($Zone)
     $id = ""
     if($Zone){ $id = [string]$Zone.Id }
+    # v1.6.2: Zone Visuals OFF forces the baseline stone palette —
+    # zone names, hazards, and variants are untouched; only paint.
+    if($script:Settings.ZoneTheme -eq $false){ $id = "ServerHalls" }
     # Raid themes carry custom ids — fall back by the zone's console color.
     if($id -notin @("ServerHalls","Flooded","Archives","Core")){
         $zc = ""
@@ -11713,12 +11838,14 @@ function Build-RayState {
                     if($d.Enemies.ContainsKey($eKey)){
                         $mv = 3
                         [void]$sprites.Add(@{X=$x+0.5;Y=$y+0.5;Tex="Boss";Scale=0.95;Dist=0.0})
-                        $inter[$eKey] = "Challenge the BOSS"
+                        $inter[$eKey] = "Fight the BOSS"
                     }
                 }
                 5 {
+                    # v1.6.2: the exit is [E]-only — no more descending
+                    # by drifting near the portal. Solid like chests.
+                    $mv = 3
                     [void]$sprites.Add(@{X=$x+0.5;Y=$y+0.5;Tex="Portal";Scale=0.9;Dist=0.0})
-                    [void]$triggers.Add(@{X=$x;Y=$y;R=0.5})
                     $inter["$x,$y"] = "Descend"
                 }
                 6 {
@@ -11735,7 +11862,7 @@ function Build-RayState {
                 }
                 7 {
                     [void]$sprites.Add(@{X=$x+0.5;Y=$y+0.5;Tex="Adventurer";Scale=0.75;Dist=0.0})
-                    $inter["$x,$y"] = "Rescue the Adventurer"
+                    $inter["$x,$y"] = "Rescue Survivor"
                 }
                 8 {
                     [void]$sprites.Add(@{X=$x+0.5;Y=$y+0.5;Tex="Altar";Scale=0.6;Dist=0.0})
@@ -12338,6 +12465,11 @@ function Invoke-RaycastLeg {
                     Write-Host "$esc[0m" -NoNewline
                     return @{ Kind="Key"; Key="M" }
                 }
+                "O" {
+                    try { [Console]::CursorVisible = $cursorWas } catch {}
+                    Write-Host "$esc[0m" -NoNewline
+                    return @{ Kind="Key"; Key="O" }
+                }
                 "P" {
                     try { [Console]::CursorVisible = $cursorWas } catch {}
                     Write-Host "$esc[0m" -NoNewline
@@ -12838,8 +12970,10 @@ function Invoke-RaycastLeg {
             elseif($fps -le 8){ $fpsCol = "93" }
             $fpsHud = "   FPS: $esc[${fpsCol}m$fps$esc[0m"
         }
-        [void]$buffer.Append(" FLOOR $($script:DungeonLevel) — $zoneName$fpsHud$esc[K`n")
-        [void]$buffer.Append(" HP [$hpBarStr] $($p.HP)/$($p.MaxHP)   MP [$mpBarStr] $($p.MP)/$($p.MaxMP)   Gold: $esc[93m$($script:Gold)g$esc[0m$esc[K`n")
+        [void]$buffer.Append(" FLOOR $($script:DungeonLevel) — $zoneName   Lv$($script:PlayerLevel)  XP $($script:XP)/$($script:XPToNext)$fpsHud$esc[K`n")
+        $bkTag = ""
+        if($script:HasBossKey){ $bkTag = "  $esc[1;33m>> BOSS KEY <<$esc[0m" }
+        [void]$buffer.Append(" HP [$hpBarStr] $($p.HP)/$($p.MaxHP)   MP [$mpBarStr] $($p.MP)/$($p.MaxMP)   Gold: $esc[93m$($script:Gold)g$esc[0m$bkTag$esc[K`n")
         # v1.6.2: a FRESH status message (under its 6s lifetime) beats
         # the [E] prompt — the player just acted, feedback outranks
         # affordance. Pressing [E] at the exit with the boss alive, or
@@ -12867,14 +13001,14 @@ function Invoke-RaycastLeg {
         # brightens and renames itself when something is in reach
         # ("[E] Open Chest"), so the prompt and the status line can
         # never mask each other again. Bar uses single spacing so the
-        # longest label ("Rescue the Adventurer") still fits 100 cols.
+        # longest label ("Rescue Survivor") still fits 100 cols.
         $eSeg = "[E] Interact"
         if($canInteract){
             $eLabel = [string]$rs.Inter[$faceKey]
             if(-not $eLabel -or $eLabel -eq "True"){ $eLabel = "Interact" }
             $eSeg = "$esc[1;33m[E] $eLabel$esc[0m"
         }
-        [void]$buffer.Append(" [W/S] Move [A/D] Turn $eSeg [M] Map [P] Potion [I] Inv [J] Quests [Q] Leave$esc[K")
+        [void]$buffer.Append(" [WASD] Move/Turn $eSeg [M] Map [P] Potion [I] Inv [J] Quests [O] Options [Q] Leave$esc[K")
         try { [Console]::Write($buffer.ToString()) } catch { Write-Host $buffer.ToString() -NoNewline }
     }
 }
@@ -12935,10 +13069,20 @@ function Enter-Dungeon {
             Write-Host ""
             $heatWarn = if((Get-DifficultyMul) -lt 1.0){"The ambient heat gnaws at you — slowly. (Easy)"}else{"The ambient heat gnaws at you. Keep moving."}
             Write-CL "  ! $heatWarn" "Red"
+        Write-Host ""
         }
+        Write-Host ""
+        Write-CL "  (Zone visuals can be turned off in [O] Options.)" "DarkGray"
         Write-Host ""
         Wait-Key
     }
+    # v1.6.2: renderer-specific display notice, once per session.
+    if(-not $script:DisplayCheckShown){
+        $script:DisplayCheckShown = $true
+        clr
+        Show-DisplayCheck
+    }
+    Show-GenerationVisual
     # ── Marn's ghost (Cat 7 flourish): one scene, once ──────────────
     # Fires on the first real descent after the journal binds (raids
     # excluded — Marn died in the Depths, not a themed rerun). SF id
@@ -13166,13 +13310,13 @@ function Enter-Dungeon {
             clr
             Render-Screen
             Write-CL "  [W] Forward  [A] Turn Left  [D] Turn Right  [S] Back" "DarkGray"
-            Write-CL "  [M] Map  [P] Potion  [I] Inventory  [J] Quests  [Q] Quit" "DarkGray"
+            Write-CL "  [M] Map  [P] Potion  [I] Inventory  [J] Quests  [O] Options  [Q] Quit" "DarkGray"
             Write-C "  > " "Yellow"
         } else {
             Render-Screen
             # Controls bar at the bottom of the buffer
             Write-CL "  [W] Forward  [A] Turn Left  [D] Turn Right  [S] Back" "DarkGray"
-            Write-CL "  [M] Map  [P] Potion  [I] Inventory  [J] Quests  [Q] Quit" "DarkGray"
+            Write-CL "  [M] Map  [P] Potion  [I] Inventory  [J] Quests  [O] Options  [Q] Quit" "DarkGray"
             Write-C "  > " "Yellow"
             # Capture where the prompt ends, so after Flush-Frame we can put
             # the cursor there for the user's keystroke to echo cleanly.
@@ -13951,6 +14095,12 @@ function Enter-Dungeon {
                 Show-QuestLog
             }
 
+            "O" {
+                # v1.6.2: options reachable mid-dungeon — renderer,
+                # zone visuals, FPS counter, turn speed, all of it.
+                Show-OptionsMenu
+                Reset-FrameBuffer
+            }
             "M" {
                 # Detailed dungeon map (v1.5): full-floor fogged map with a
                 # legend — the raycast renderer's replacement for the side
@@ -14023,17 +14173,15 @@ function Enter-Dungeon {
                 # Never-blocking drain (see Drain-Keys): a held [Q]'s
                 # release event must not stall the confirm screen.
                 Drain-Keys
-                Write-Host ""
-                Write-CL "  ── L E A V E   T H E   D U N G E O N ? ──" "Red"
-                Write-Host ""
                 $hasMut = ($null -ne $script:DungeonMutator)
-                if($hasMut){
-                    Write-CL "  ! WARNING: A mutator is active. Quitting forfeits ALL" "DarkYellow"
-                    Write-CL "    loot, gold, and XP earned this run." "DarkYellow"
-                } else {
-                    Write-CL "  Fleeing drops a random share of your loot behind you." "DarkGray"
-                }
-                Write-Host ""
+                $qLines = if($hasMut){ @(
+                    "! WARNING: A mutator is active. Quitting forfeits ALL",
+                    "  loot, gold, and XP earned this run."
+                ) } else { @(
+                    "Leaving early has a price: a random share of your loot",
+                    "is dropped behind you on the way out."
+                ) }
+                Show-NoticePanel -Title "L E A V E   T H E   D U N G E O N ?" -Color "Red" -EdgeColor "DarkRed" -Lines $qLines
                 Write-C "  Abandon dungeon? (y/n): " "Red"
                 $confirm = Read-Host
                 if($confirm -ne 'y'){
@@ -15764,6 +15912,7 @@ function Save-Game {
         $(
             $kv = @()
             $kv += "GD:$([int]$script:GameDay)"
+            $kv += "ZT:$(if($script:Settings.ZoneTheme -ne $false){1}else{0})"
             $kv += "CR:$([int]$script:Corruption)"
             $sfPairs = @()
             if($script:StoryFlags){
@@ -16335,6 +16484,9 @@ function Load-Game {
                 $key = $kvSplit[0]
                 $val = $kvSplit[1]
                 switch($key){
+                    "ZT" {
+                        $script:Settings.ZoneTheme = ([string]$val -ne "0")
+                    }
                     "GD" {
                         $gd = 0
                         if([int]::TryParse([string]$val, [ref]$gd) -and $gd -ge 1){
@@ -16994,6 +17146,12 @@ function Show-OptionsMenu {
         # Turn speed row (v1.6): raycast camera rotation, preset cycle.
         Write-C "  [6] Turn Speed:  " "White"; Write-C "$rotP%" "Cyan"
         Write-CL "  (3D camera rotation — cycles 50/75/100/125/150%)" "DarkGray"
+        # Zone visuals row (v1.6.2): themed dungeon paint on/off.
+        $ztOn = ($script:Settings.ZoneTheme -ne $false)
+        $ztStr = if($ztOn){"ON "}else{"OFF"}
+        $ztColor = if($ztOn){"Green"}else{"DarkGray"}
+        Write-C "  [7] Zone Visuals:" "White"; Write-C " $ztStr" $ztColor
+        Write-CL "  (OFF = plain stone texture on every floor)" "DarkGray"
         Write-Host ""
         Write-CL "  [0] Back" "DarkGray"
         Write-Host ""
@@ -17039,6 +17197,9 @@ function Show-OptionsMenu {
                     125 { 150 }
                     default { 50 }
                 }
+            }
+            "7" {
+                $script:Settings.ZoneTheme = -not ($script:Settings.ZoneTheme -ne $false)
             }
             "0" {
                 $loop = $false
@@ -17550,7 +17711,13 @@ function Get-TownQuest {
     param([string]$LocId)
     switch($LocId){
         "backupvale" { @{ Id="bkv_key"; Name="The Skeleton Key"; Giver="Old Tumbler Wren"; Type="Collect"; ItemName="Ancient Rune"; Need=3 } }
-        "bashford"   { @{ Id="bash_edge"; Name="One-Liner Diplomacy"; Giver="Bruska the Smith"; Type="Kill"; Need=12 } }
+        "bashford"   {
+            if((Get-QuestStage "bash_edge") -eq 999999){
+                @{ Id="bash_edge2"; Name="Diplomacy, Continued"; Giver="Bruska the Smith"; Type="Kill"; Need=20 }
+            } else {
+                @{ Id="bash_edge"; Name="One-Liner Diplomacy"; Giver="Bruska the Smith"; Type="Kill"; Need=12 }
+            }
+        }
         "cronmarch"  { @{ Id="cron_parcel"; Name="On Schedule"; Giver="the Scheduler"; Type="Deliver"; Target="syslogxing"; Days=4 } }
         "nullhaven"  {
             # Sequel: once existence is proven, it must be FILED.
@@ -17560,11 +17727,35 @@ function Get-TownQuest {
                 @{ Id="null_proof"; Name="Proof of Existence"; Giver="the Registrar of Nullhaven"; Type="Collect"; ItemName="Shadow Gem"; Need=1 }
             }
         }
-        "foreachfalls" { @{ Id="falls_fish"; Name="One at a Time"; Giver="Weir the ferryman"; Type="Fish"; Need=3 } }
-        "cachegrove"   { @{ Id="cg_bread"; Name="Stale Bread, Fresh Scales"; Giver="Loaf-warden Prue"; Type="Collect"; ItemName="Wyvern Scale"; Need=2 } }
-        "firewallkeep" { @{ Id="fk_deny"; Name="Deny by Default"; Giver="Gate-captain Rules"; Type="Clear"; Need=2 } }
+        "foreachfalls" {
+            if((Get-QuestStage "falls_fish") -eq 999999){
+                @{ Id="falls_fish2"; Name="The Pipeline Runs Deep"; Giver="Weir the ferryman"; Type="Fish"; Need=6 }
+            } else {
+                @{ Id="falls_fish"; Name="One at a Time"; Giver="Weir the ferryman"; Type="Fish"; Need=3 }
+            }
+        }
+        "cachegrove"   {
+            if((Get-QuestStage "cg_bread") -eq 999999){
+                @{ Id="cg_bread2"; Name="A Warm Batch"; Giver="Loaf-warden Prue"; Type="Collect"; ItemName="Ruby Chunk"; Need=2 }
+            } else {
+                @{ Id="cg_bread"; Name="Stale Bread, Fresh Scales"; Giver="Loaf-warden Prue"; Type="Collect"; ItemName="Wyvern Scale"; Need=2 }
+            }
+        }
+        "firewallkeep" {
+            if((Get-QuestStage "fk_deny") -eq 999999){
+                @{ Id="fk_deny2"; Name="Allow-List of One"; Giver="Gate-captain Rules"; Type="Clear"; Need=4 }
+            } else {
+                @{ Id="fk_deny"; Name="Deny by Default"; Giver="Gate-captain Rules"; Type="Clear"; Need=2 }
+            }
+        }
         "syslogxing"   { @{ Id="sx_ghost"; Name="The Unwritten Traveler"; Giver="the log-keeper"; Type="Depth"; Need=10 } }
-        "kernelhold"   { @{ Id="kh_audit"; Name="A Capital Request"; Giver="Auditor Primm"; Type="Kill"; Need=15 } }
+        "kernelhold"   {
+            if((Get-QuestStage "kh_audit") -eq 999999){
+                @{ Id="kh_audit2"; Name="The Second Audit"; Giver="Auditor Primm"; Type="Kill"; Need=25 }
+            } else {
+                @{ Id="kh_audit"; Name="A Capital Request"; Giver="Auditor Primm"; Type="Kill"; Need=15 }
+            }
+        }
         "registry"     {
             # 3-chapter arc: each chapter appears once the last is done.
             if((Get-QuestStage "reg_ink2") -eq 999999){
@@ -18006,7 +18197,7 @@ function Show-FishingMinigame {
         $script:FishCastDay = $script:GameDay
         $script:FishCastsToday = 0
     }
-    $LINE_W = 64
+    $LINE_W = 72
     function fish-Pad([string]$s){
         if($s.Length -ge $LINE_W){ return $s.Substring(0, $LINE_W) }
         return $s + (' ' * ($LINE_W - $s.Length))
@@ -18052,7 +18243,7 @@ function Show-FishingMinigame {
             if(-not $any){ break }
         }
     }
-    $waveBase = '~ ~~~ ~~ ~ ~~ ~~~~ ~ ~~ ~~~ ~~ ~~~~ ~ ~~ ~~ ~~~ ~ ~~~~ ~~ ~ ~~ ~~~ ~~ ~'
+    $waveBase = '~ ~~~ ~~ ~ ~~ ~~~~ ~ ~~ ~~~ ~~ ~~~~ ~ ~~ ~~ ~~~ ~ ~~~~ ~~ ~ ~~ ~~~ ~~ ~ ~~ ~~~ ~~ ~'
     function fish-SetChar([string]$s, [int]$x, [string]$c){
         if($x -lt 0 -or $x -ge $s.Length){ return $s }
         return $s.Substring(0, $x) + $c + $s.Substring($x + $c.Length)
@@ -18061,9 +18252,11 @@ function Show-FishingMinigame {
     # 'hit' (hauling), 'snap' (early), 'lost' (missed window).
     function fish-Frame([int]$ph, [string]$state, [int]$tier, [int]$castsLeft){
         fish-Home
-        $bobX = 30
+        $bobX = 34
         Write-Host (fish-Pad "  ── F I S H I N G ──   Lv$(Get-SkillLevel 'Fishing')   casts left: $castsLeft") -ForegroundColor Cyan
         Write-Host (fish-Pad '') 
+        # v1.6.2 art pass: sky, a pier to stand on, deeper water.
+        Write-Host (fish-Pad '      .-~~-.              .--~~--.                       .-~~~-.') -ForegroundColor DarkGray
         $sky1 = ' ' * $LINE_W
         $sky2 = ' ' * $LINE_W
         $rodTip = '\_'
@@ -18084,6 +18277,7 @@ function Show-FishingMinigame {
         }
         Write-Host (fish-Pad $sky1) -ForegroundColor DarkYellow
         Write-Host (fish-Pad $sky2) -ForegroundColor DarkYellow
+        Write-Host (fish-Pad ('  ' + [string][char]0x2550 * 12 + [string][char]0x2566 + [string][char]0x2550 * 6 + [string][char]0x2566 + [string][char]0x2550 * 4)) -ForegroundColor DarkYellow
         # Three water rows, phase-shifted for motion
         $w1 = $waveBase.Substring(($ph) % 8,        $LINE_W)
         $w2 = $waveBase.Substring(($ph + 3) % 8,    $LINE_W)
@@ -18101,6 +18295,10 @@ function Show-FishingMinigame {
         Write-Host (fish-Pad $w1) -ForegroundColor Cyan
         Write-Host (fish-Pad $w2) -ForegroundColor DarkCyan
         Write-Host (fish-Pad $w3) -ForegroundColor DarkBlue
+        $w4 = $waveBase.Substring(($ph + 1) % 8, $LINE_W)
+        $w4 = fish-SetChar $w4 2 ')('
+        $w4 = fish-SetChar $w4 ($LINE_W - 6) ')('
+        Write-Host (fish-Pad $w4) -ForegroundColor DarkBlue
         $msg = switch($state){
             'wait'   { '  Line settled. When it STRIKES, press [SPACE] to reel in!' }
             'strike' { '  !!! S T R I K E !!!  [SPACE] NOW!' }
@@ -18759,10 +18957,16 @@ function Invoke-TravelDay {
                 $price = [math]::Floor($pot.Price * 0.6)
                 Write-CL "  A wandering trader flags you down: '$($pot.Name)," "Gray"
                 Write-CL "  road price — ${price}g. Everything's cheaper when" "Gray"
-                Write-CL "  you're the one carrying it.' Buy? (y/n)" "Cyan"
-                Write-C  "  > " "Yellow"
+                Write-CL "  you're the one carrying it.'" "Gray"
+                Write-C  "  Buy? (y/n) > " "Yellow"
                 $buy = Read-Host
-                if(($buy -eq "y" -or $buy -eq "Y") -and $script:Gold -ge $price -and $script:Potions.Count -lt 10){
+                # v1.6.2: every outcome answers — a yes that failed on
+                # gold or belt space used to read as him just leaving.
+                if(($buy -eq "y" -or $buy -eq "Y") -and $script:Gold -lt $price){
+                    Write-CL "  'Come back richer, friend.' (you need ${price}g)" "DarkYellow"
+                } elseif(($buy -eq "y" -or $buy -eq "Y") -and $script:Potions.Count -ge 10){
+                    Write-CL "  'Your belt's full, friend.' (potion belt 10/10)" "DarkYellow"
+                } elseif(($buy -eq "y" -or $buy -eq "Y") -and $script:Gold -ge $price -and $script:Potions.Count -lt 10){
                     $script:Gold -= $price
                     # Clone with bag fields — shop templates lack Kind/Weight.
                     $potItem = @{}
@@ -20270,6 +20474,33 @@ function Show-Changelog {
             "      one extra keypress on a key RELEASE were made"
             "      release-proof (the [Q] black screen, plus pauses"
             "      at altars, lore, encounters, and loot screens)."
+            "    * Pack fights retuned: fewer ambushes at low"
+            "      Corruption, and packs of FOUR only in a deeply"
+            "      corrupted world (70+)."
+            "    * The road trader answers every outcome — no more"
+            "      silent shrug when you said yes but lacked gold"
+            "      or belt space. His speech is no longer blue."
+            "    * The dungeon exit is [E]-only in the 3D view."
+            "    * Mixed armor finally trains: no majority class"
+            "      now trains each worn class at half rate. And"
+            "      MATCHING sets (3+ pieces, one class) pay +2 DEF"
+            "      (Heavy) or +2 SPD (Light) on top of skill tiers."
+            "    * World events announce their endings, so a Blood"
+            "      Moon rolling into a Goblin Horde overnight no"
+            "      longer looks like a broken banner."
+            "    * [O] Options works INSIDE the dungeon — and a new"
+            "      [7] Zone Visuals toggle paints every floor plain"
+            "      stone if the themed looks aren't for you (saved"
+            "      with your game)."
+            "    * The HUD shows your level, XP, and a >> BOSS KEY <<"
+            "      tag the moment you hold it."
+            "    * Items an active Collect quest still needs can't be"
+            "      sold out from under the quest."
+            "    * A loading bar at launch, a floor-generation visual"
+            "      on every descent, per-renderer display checks, a"
+            "      proper send-off screen on [Q], a wider fishing"
+            "      pier, a road-strip province map — and five new"
+            "      side quests for towns that finish their first."
         )}
         @{Title="v1.5.0 — THE PROVINCE SWEEP"; Color="Magenta"; Lines=@(
             "  CITY SIDE QUESTS"
@@ -20435,7 +20666,7 @@ function Show-Changelog {
             "  LORE NOTES — NOW READABLE"
             "    * 18% of opened chests drop a NOTE (15 entries total)."
             "    * Inventory now has [V] Read Notes when at least one is"
-            "      in your bag. Notes weigh 0 — pure flavor."
+            "      in your bag. Notes weigh nothing."
             ""
             "  COMBAT & SHOP POLISH"
             "    * Boss base stats +10% (HP 210 -> 231, ATK 20 -> 22)."
@@ -20520,7 +20751,7 @@ function Show-Changelog {
             "      Blacksmithing (repairs), Alchemy (potions)."
             "    * Bonuses are deliberately small — +1 effect step"
             "      per 10 levels, capped at skill Lv50. Seasoning,"
-            "      not the meal. Highlights: +dmg on your weapon"
+            "      overpower the game. Highlights: +dmg on your weapon"
             "      class, +DEF in heavy gear, +SPD in light gear,"
             "      cheaper repairs, stronger potions, and a wider"
             "      lockpick sweet-spot at Lockpicking 15+."
@@ -20704,6 +20935,24 @@ function Show-Changelog {
 
 # ─── ENTRY POINT ─────────────────────────────────────────────────
 function Start-Game {
+    # v1.6.2: a little theater — thick blue loading bar before the
+    # splash. Entirely fake; PowerShell parsed everything pages ago.
+    try {
+        clr
+        $spin = @('/','-','\','|')
+        for($lb = 0; $lb -le 26; $lb++){
+            try { [Console]::SetCursorPosition(0,2) } catch {}
+            Write-C "     L O A D I N G  " "White"
+            Write-CL $spin[$lb % 4] "Cyan"
+            Write-Host ""
+            Write-C "     " "DarkBlue"
+            Write-C ("█" * $lb) "Blue"
+            Write-C ("░" * (26 - $lb)) "DarkGray"
+            Write-CL "  $([int](($lb / 26) * 100))%  " "DarkBlue"
+            Start-Sleep -Milliseconds (Get-Random -Min 25 -Max 80)
+        }
+        Start-Sleep -Milliseconds 250
+    } catch {}
     $script:GameRunning = $true
     # Settings are now part of the save code, not a separate file.
     # Try the optional terminal resize using the current in-memory
@@ -22084,7 +22333,7 @@ function Show-Tutorial {
         @{Title="15. SKILLS"; Lines=@(
             "  Ten skills level 0-50 by DOING. Watch them at the Training"
             "  Grounds ([6] in town). Every 10 levels is one TIER, and"
-            "  tiers feed small, steady bonuses — seasoning, not the meal."
+            "  tiers feed small, steady bonuses that add up over a long run."
             ""
             "  SKILL            TRAINS BY              EACH TIER GIVES"
             "    Swords / Bows    landed weapon hits     +1 weapon damage"
