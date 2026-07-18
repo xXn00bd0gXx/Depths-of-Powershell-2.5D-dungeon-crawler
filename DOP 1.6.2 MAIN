@@ -12123,6 +12123,29 @@ function Init-RayEngine {
         }
         $wallMaps[$v] = $wm
     }
+    # v1.6.2 decals: variants 4-5 start as copies of the clean brick
+    # (variant 0) and get decal pixels stamped on top — wt 4 = dried
+    # blood, wt 5 = banner cloth. Rare by hash; pure paint.
+    $wallMapsAll = New-Object "object[]" 6
+    for($v=0; $v -lt 4; $v++){ $wallMapsAll[$v] = $wallMaps[$v] }
+    for($v=4; $v -lt 6; $v++){
+        $wm = New-Object "int[]" 2048
+        [Array]::Copy($wallMaps[0], $wm, 2048)
+        $wallMapsAll[$v] = $wm
+    }
+    # Blood smear: a drip cluster low on the wall, streaking down.
+    $wm = $wallMapsAll[4]
+    foreach($cc in @(@(40,14),@(41,14),@(42,14),@(39,15),@(40,15),@(41,15),@(42,15),@(43,15),@(40,16),@(41,16),@(42,16),@(41,17),@(42,17),@(41,18),@(41,19),@(42,20),@(41,21),@(41,22),@(41,23),@(38,16),@(38,17),@(44,16),@(44,17),@(44,18))){
+        $wm[($cc[1] -shl 6) + $cc[0]] = 4
+    }
+    # Faction banner: a hanging pennant, pole row at the top.
+    $wm = $wallMapsAll[5]
+    for($tx=24; $tx -le 39; $tx++){ $wm[(3 -shl 6) + $tx] = 3 }
+    for($ty=4; $ty -le 17; $ty++){
+        $bw = 6 - [int](($ty - 4) / 3)
+        for($tx=(32-$bw); $tx -le (31+$bw); $tx++){ $wm[($ty -shl 6) + $tx] = 5 }
+    }
+    $wallMaps = $wallMapsAll
     # Variant 1: a jagged crack down the right half.
     $wm = $wallMaps[1]
     foreach($cc in @(@(22,2),@(21,3),@(21,4),@(20,5),@(19,6),@(19,7),@(20,8),@(20,10),@(21,11),@(21,12),@(22,13))){
@@ -12228,6 +12251,9 @@ function Invoke-RaycastLeg {
     $ladFA = $pal.FloorA;   $nFA = $ladFA.Count
     $ladFB = $pal.FloorB;   $nFB = $ladFB.Count
     $ladBe = $pal.Beam;     $nBe = $ladBe.Count
+    # v1.6.2 decal ladders (zone-independent): dried blood + banner.
+    $ladBlood = @(124,88,88,52,52,52,235,235,234,234,233,233,232,232,232)
+    $ladBann  = @(172,130,130,94,94,58,58,236,235,234,233,233,232,232,232)
     $sw = $eng.SW; $sh = $eng.SH; $vh = $eng.VH; $horizon = $eng.Horizon
     $tcLut = $eng.TcLut
     $fgF = $eng.Fg; $bgF = $eng.Bg; $zB = $eng.Z
@@ -12699,7 +12725,11 @@ function Invoke-RaycastLeg {
             $shadeBase = [int]$sdv
             $glowCol = 0.0
             if($hasTorch){ $glowCol = 5.0 * $flicker / [math]::Sqrt($dist) }
-            $wtm = $wallMaps[(($mX * 7 + $mY * 13) -band 3)]
+            $wvH = ($mX * 7 + $mY * 13)
+            $wvSel = $wvH -band 3
+            if(($wvH % 19) -eq 0){ $wvSel = 4 }
+            elseif(($wvH % 31) -eq 7){ $wvSel = 5 }
+            $wtm = $wallMaps[$wvSel]
             $frameIdx = $col
             $isBottomHalf = $false
 
@@ -12762,7 +12792,10 @@ function Invoke-RaycastLeg {
                 $texY = [int](($y - $wallStart) * $texYF)
                 if($texY -gt 31){ $texY = 31 }
                 if($hitType -eq 2){
-                    if($texX -lt 8 -or $texX -ge 24){
+                    # v1.6.2: door constants live in 64x32 texture
+                    # space (scaled from the old 32x16 — unscaled,
+                    # the door squashed into its top half).
+                    if($texX -lt 16 -or $texX -ge 48){
                         # Stone flanks reuse the wall pattern map:
                         # mortar cell -> mortar ladder, anything else
                         # -> brick (matches the old two-tone flank).
@@ -12779,10 +12812,10 @@ function Invoke-RaycastLeg {
                         # boss door (v1.6). Handle glint stays gold.
                         $dcFrame = 237; $dcLine = 233; $dcWood = 130
                         if($hitBoss){ $dcFrame = 124; $dcLine = 52; $dcWood = 88 }
-                        if($texY -le 1 -or $texY -ge 14){ $pixelColor = $dcFrame }
-                        elseif($texX -eq 8 -or $texX -eq 16 -or $texX -eq 23){ $pixelColor = $dcLine }
-                        elseif($texX -ge 14 -and $texX -le 17 -and $texY -ge 7 -and $texY -le 9){
-                            if($texY -eq 8 -and $texX -ge 15 -and $texX -le 16){ $pixelColor = $dcLine } else { $pixelColor = 220 }
+                        if($texY -le 3 -or $texY -ge 28){ $pixelColor = $dcFrame }
+                        elseif($texX -le 17 -or ($texX -ge 31 -and $texX -le 32) -or $texX -ge 46){ $pixelColor = $dcLine }
+                        elseif($texX -ge 28 -and $texX -le 35 -and $texY -ge 14 -and $texY -le 19){
+                            if($texY -ge 16 -and $texY -le 17 -and $texX -ge 30 -and $texX -le 33){ $pixelColor = $dcLine } else { $pixelColor = 220 }
                         } else { $pixelColor = $dcWood }
                     }
                 } elseif($hasTorch -and $texX -ge 14 -and $texX -le 17 -and $texY -ge 3 -and $texY -le 7){
@@ -12822,6 +12855,12 @@ function Invoke-RaycastLeg {
                     } elseif($wt -eq 2){
                         if($si -ge $nHi){ $si = $nHi - 1 }
                         $pixelColor = $ladHi[$si]
+                    } elseif($wt -eq 4){
+                        if($si -ge 15){ $si = 14 }
+                        $pixelColor = $ladBlood[$si]
+                    } elseif($wt -eq 5){
+                        if($si -ge 15){ $si = 14 }
+                        $pixelColor = $ladBann[$si]
                     } else {
                         if($si -ge $nDm){ $si = $nDm - 1 }
                         $pixelColor = $ladDm[$si]
@@ -20544,7 +20583,8 @@ function Show-Changelog {
             "      textures are 64x32 (4x the detail up close), a"
             "      subtle head-bob rides your stride, and terminals"
             "      that speak 24-bit color get exact-RGB shading"
-            "      automatically."
+            "      automatically. And keep an eye on the walls:"
+            "      some carry dried blood, some carry banners."
         )}
         @{Title="v1.5.0 — THE PROVINCE SWEEP"; Color="Magenta"; Lines=@(
             "  CITY SIDE QUESTS"
