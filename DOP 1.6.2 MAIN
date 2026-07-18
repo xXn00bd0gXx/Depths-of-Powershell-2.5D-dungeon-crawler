@@ -22693,8 +22693,6 @@ function Show-InventoryScreen {
                     $rl += @{ T = ("  " + $dLbl + "(empty)"); C = "90" }
                 }
             }
-            $rl += @{ T = ""; C = "0" }
-            $rl += @{ T = "(gear changes redraw the doll)"; C = "90" }
             $rtMax = 62
             try { $rtMax = [int]$Host.UI.RawUI.WindowSize.Width - 38 } catch {}
             if($rtMax -lt 12){ $rtMax = 12 }
