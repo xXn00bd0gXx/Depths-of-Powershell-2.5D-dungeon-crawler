@@ -7958,13 +7958,18 @@ function Show-LootScreen {
                 $script:Ingredients[$iType]++
                 $taken += $it
             }
+            # Journal pages (Cat 7): flag ONLY, no bag copy. The [V]
+            # journal is the collection; a duplicate paper item was
+            # clutter (user). Pages were already 0 wt and never saved
+            # as items, so in-bag legacy copies die on save/load.
+            elseif($it.IsNote -and $it.Page){
+                [void](Add-JournalPage ([int]$it.Page))
+                $taken += $it
+            }
             # Loot, weapons, armor → main inventory bag
             else {
                 [void]$script:Inventory.Add($it)
                 $taken += $it
-                # Journal page pickup (Cat 7): record permanently. The
-                # paper item is just a memento — the flag is the truth.
-                if($it.IsNote -and $it.Page){ [void](Add-JournalPage ([int]$it.Page)) }
                 # Track for LootHunter quest (any non-Gold/Lockpick/Potion/Throw item)
                 if($it.Kind -eq "Loot" -or $it.Kind -eq "Weapon" -or $it.Kind -eq "Armor"){
                     Update-QuestProgress "LootHunter"
@@ -8212,6 +8217,9 @@ function Show-LootScreen {
             }
             Start-Sleep -Milliseconds 25
         }
+        # A held arrow floods the input buffer; without a drain every
+        # buffered repeat replays after release — forever-scroll (user).
+        Drain-Keys
 
         switch($key){
             "UP" {
@@ -8295,8 +8303,17 @@ function Show-DropScreen {
     $potCount = $script:Potions.Count
     $thrCount = $script:ThrowablePotions.Count
     $hasPicks = ($script:Lockpicks -gt 0)
+    # (user) Cooking ingredients are droppable now: 1 wt each, qty
+    # rows like the lockpick control below.
+    $ingKeys = @()
+    if($script:Ingredients){
+        foreach($ingK in ($script:Ingredients.Keys | Sort-Object)){
+            if([int]$script:Ingredients[$ingK] -gt 0){ $ingKeys += [string]$ingK }
+        }
+    }
+    $ingCount = $ingKeys.Count
 
-    if($invCount -eq 0 -and $potCount -eq 0 -and $thrCount -eq 0 -and -not $hasPicks){
+    if($invCount -eq 0 -and $potCount -eq 0 -and $thrCount -eq 0 -and $ingCount -eq 0 -and -not $hasPicks){
         Write-CL "  Nothing droppable." "DarkGray"
         Wait-Key
         return
@@ -8309,9 +8326,11 @@ function Show-DropScreen {
     #   row picksRow (if hasPicks)                   -> lockpick quantity control
     $potStart = $invCount
     $thrStart = $invCount + $potCount
-    $picksRow = $invCount + $potCount + $thrCount
+    $ingStart = $invCount + $potCount + $thrCount
+    $picksRow = $ingStart + $ingCount
     $totalRows = $picksRow
     if($hasPicks){ $totalRows++ }
+    $ingDropQty = New-Object 'int[]' ([math]::Max($ingCount, 1))
 
     $invMarked = New-Object 'bool[]' ([math]::Max($invCount, 1))
     $potMarked = New-Object 'bool[]' ([math]::Max($potCount, 1))
@@ -8342,6 +8361,7 @@ function Show-DropScreen {
         for($i=0; $i -lt $thrCount; $i++){
             if($thrMarked[$i]){ $shedW += 1 }
         }
+        for($i=0; $i -lt $ingCount; $i++){ $shedW += $ingDropQty[$i] }
         $afterW = $curW - $shedW
         $afterColor = if($afterW -gt $maxW){"Red"}else{"Green"}
 
@@ -8460,6 +8480,28 @@ function Show-DropScreen {
             Write-CL $valStr.PadLeft(6) "DarkGray"
         }
 
+        # Ingredient rows (qty control like lockpicks)
+        for($i=0; $i -lt $ingCount; $i++){
+            $rowIdx = $ingStart + $i
+            $isCursor = ($cursor -eq $rowIdx)
+            if($isCursor){ Write-C "  > " "Yellow" } else { Write-C "    " "DarkGray" }
+            $dq = [int]$ingDropQty[$i]
+            $boxColor = if($dq -gt 0){"Red"}else{"DarkGray"}
+            Write-C "[~]" $boxColor
+            $iName = [string]$ingKeys[$i]
+            if($iName.Length -gt 24){ $iName = $iName.Substring(0,24) }
+            Write-C " " "White"
+            Write-C $iName.PadRight(24) "White"
+            Write-C " " "DarkGray"
+            Write-C "[Ing]".PadRight(7) "Green"
+            Write-C "  " "DarkGray"
+            Write-C "${dq}wt".PadRight(5) "DarkGray"
+            Write-C "  " "DarkGray"
+            $iHave = [int]$script:Ingredients[$ingKeys[$i]]
+            $iQtyDisplay = if($dq -gt 0){"DROP $dq / $iHave"}else{"keep all $iHave"}
+            Write-CL $iQtyDisplay.PadLeft(16) "DarkGray"
+        }
+
         # Lockpicks row
         if($hasPicks){
             $isCursor = ($cursor -eq $picksRow)
@@ -8514,6 +8556,9 @@ function Show-DropScreen {
             }
             Start-Sleep -Milliseconds 25
         }
+        # A held arrow floods the input buffer; without a drain every
+        # buffered repeat replays after release — forever-scroll (user).
+        Drain-Keys
 
         switch($key){
             "UP" {
@@ -8529,6 +8574,12 @@ function Show-DropScreen {
                 if($hasPicks -and $cursor -eq $picksRow){
                     if($picksDropQty -eq 0){ $picksDropQty = $script:Lockpicks }
                     else { $picksDropQty = 0 }
+                } elseif($cursor -ge $ingStart){
+                    $i = $cursor - $ingStart
+                    if($i -ge 0 -and $i -lt $ingCount){
+                        if($ingDropQty[$i] -eq 0){ $ingDropQty[$i] = [int]$script:Ingredients[$ingKeys[$i]] }
+                        else { $ingDropQty[$i] = 0 }
+                    }
                 } elseif($cursor -ge $thrStart){
                     $i = $cursor - $thrStart
                     if($i -ge 0 -and $i -lt $thrCount){ $thrMarked[$i] = -not $thrMarked[$i] }
@@ -8543,11 +8594,17 @@ function Show-DropScreen {
             "PLUS" {
                 if($hasPicks -and $cursor -eq $picksRow){
                     if($picksDropQty -lt $script:Lockpicks){ $picksDropQty++ }
+                } elseif($cursor -ge $ingStart -and $cursor -lt $picksRow){
+                    $i = $cursor - $ingStart
+                    if($ingDropQty[$i] -lt [int]$script:Ingredients[$ingKeys[$i]]){ $ingDropQty[$i]++ }
                 }
             }
             "MINUS" {
                 if($hasPicks -and $cursor -eq $picksRow){
                     if($picksDropQty -gt 0){ $picksDropQty-- }
+                } elseif($cursor -ge $ingStart -and $cursor -lt $picksRow){
+                    $i = $cursor - $ingStart
+                    if($ingDropQty[$i] -gt 0){ $ingDropQty[$i]-- }
                 }
             }
             { $_ -eq "DROP" -or $_ -eq "ENTER" } {
@@ -8557,7 +8614,9 @@ function Show-DropScreen {
                 for($i=0; $i -lt $potCount; $i++){ if($potMarked[$i]){ $potDropCount++ } }
                 $thrDropCount = 0
                 for($i=0; $i -lt $thrCount; $i++){ if($thrMarked[$i]){ $thrDropCount++ } }
-                $totalDrops = $invDropCount + $potDropCount + $thrDropCount + $picksDropQty
+                $ingDropTotal = 0
+                for($i=0; $i -lt $ingCount; $i++){ $ingDropTotal += [int]$ingDropQty[$i] }
+                $totalDrops = $invDropCount + $potDropCount + $thrDropCount + $picksDropQty + $ingDropTotal
                 if($totalDrops -eq 0){
                     if($key -eq "DROP"){
                         Write-Host ""
@@ -8571,6 +8630,7 @@ function Show-DropScreen {
                 if($invDropCount -gt 0){ $parts += "$invDropCount item(s)" }
                 if($potDropCount -gt 0){ $parts += "$potDropCount potion(s)" }
                 if($thrDropCount -gt 0){ $parts += "$thrDropCount throwable(s)" }
+                if($ingDropTotal -gt 0){ $parts += "$ingDropTotal ingredient(s)" }
                 if($picksDropQty -gt 0){ $parts += "$picksDropQty lockpick(s)" }
                 $msg = "Drop " + ($parts -join " + ") + "?"
                 Write-C "  $msg (y/n): " "Yellow"
@@ -8585,6 +8645,11 @@ function Show-DropScreen {
                     }
                     for($i = $thrCount - 1; $i -ge 0; $i--){
                         if($thrMarked[$i]){ $script:ThrowablePotions.RemoveAt($i) }
+                    }
+                    for($i = 0; $i -lt $ingCount; $i++){
+                        if($ingDropQty[$i] -gt 0){
+                            $script:Ingredients[$ingKeys[$i]] = [math]::Max(0, [int]$script:Ingredients[$ingKeys[$i]] - [int]$ingDropQty[$i])
+                        }
                     }
                     if($picksDropQty -gt 0){
                         $script:Lockpicks -= $picksDropQty
@@ -13841,8 +13906,8 @@ function Enter-Dungeon {
                                             Page      = [int]$note.Page
                                             Body      = $note.Body
                                             Weight    = 0
-                                            Value     = 5
-                                            Desc      = "A page of a journal. (Recorded when taken)"
+                                            Value     = 0
+                                            Desc      = "A page of Marn's journal. (Recorded in the journal when taken)"
                                         }
                                         $chestPile += $noteItem
                                     }
@@ -16484,6 +16549,7 @@ if(-not $script:AvailableQuests -or $script:AvailableQuests.Count -eq 0){
             @{N="[T]"; C="Yellow";  L="Turn in all completed"}
             @{N="[R]"; C="DarkCyan";L="Refresh available quests (free)"}
             @{N="[!]"; C="Red";     L="Story — view or advance the trail"}
+            @{N="[*]"; C="Magenta"; L="Side quests — view details"}
             @{N="[0]"; C="White";   L="Back"}
         )
         foreach($o in $optRows){
@@ -16505,6 +16571,55 @@ if(-not $script:AvailableQuests -or $script:AvailableQuests.Count -eq 0){
                 # mark opens — it shows the beat, and advances the
                 # quest itself when its goal is met.
                 Show-StoryQuest -Context "town"
+            }
+            "*" {
+                # (user) Detail view for active town side quests. The
+                # board row only shows names; this card adds giver,
+                # town, and the objective per quest Type.
+                $svSides = @()
+                foreach($svLoc in @("backupvale","bashford","cronmarch","nullhaven","foreachfalls","cachegrove","firewallkeep","syslogxing","kernelhold","registry","terminus","sysv")){
+                    $svSq = Get-TownQuest $svLoc
+                    if(-not $svSq){ continue }
+                    $svSt = Get-QuestStage $svSq.Id
+                    if($svSt -ge 100000 -and $svSt -ne 999999){
+                        $svSides += @{ Q = $svSq; Loc = $svLoc }
+                    }
+                }
+                clr
+                Write-Host ""
+                Write-CL "  ╔═════════════════════════════════════════════════╗" "DarkMagenta"
+                Write-CL "  ║             S I D E   Q U E S T S                ║" "Magenta"
+                Write-CL "  ╚═════════════════════════════════════════════════╝" "DarkMagenta"
+                Write-Host ""
+                if($svSides.Count -eq 0){
+                    Write-CL "  No side quests active. Townsfolk marked [*] across the" "DarkGray"
+                    Write-CL "  province have work for you." "DarkGray"
+                    Write-Host ""
+                } else {
+                    foreach($svS in $svSides){
+                        $svQ = $svS.Q
+                        $svTown = (Get-WorldLocation $svS.Loc).Name
+                        $svTarget = ""
+                        if([string]$svQ.Type -eq "Deliver" -and $svQ.Target){
+                            $svTarget = (Get-WorldLocation $svQ.Target).Name
+                        }
+                        $svObj = switch([string]$svQ.Type){
+                            "Collect" { "Bring $($svQ.Need)x $($svQ.ItemName)." }
+                            "Kill"    { "Slay $($svQ.Need) monsters in the Depths." }
+                            "Clear"   { "Clear $($svQ.Need) dungeon runs." }
+                            "Fish"    { "Catch $($svQ.Need) fish." }
+                            "Deliver" { "Deliver a parcel to $svTarget within $($svQ.Days) days." }
+                            default   { "Ask $($svQ.Giver) for the particulars." }
+                        }
+                        Write-C "  * " "Magenta"
+                        Write-CL $svQ.Name "Yellow"
+                        Write-CL "      From $($svQ.Giver) of $svTown." "Gray"
+                        Write-CL "      $svObj" "White"
+                        Write-CL "      Advance or turn in at the [*] in $svTown." "DarkGray"
+                        Write-Host ""
+                    }
+                }
+                Wait-Enter
             }
             "A" {
                 if($script:Quests.Count -ge 5){
@@ -22455,16 +22570,57 @@ function Show-QuestLog {
     Write-CL "  ╚══════════════════════════════════════════════════════════════════╝" "DarkYellow"
     Write-Host ""
 
-    if(-not $script:Quests -or $script:Quests.Count -eq 0){
+    # (user fix) The log previously listed ONLY board bounties — the
+    # ! story quest and * town side quests were invisible outside
+    # town. All three sections render here now.
+    $qlMq = Get-CurrentMainQuest
+    $qlSt = Get-MainStage
+    $qlStory = ($qlMq -and $qlSt -gt 0)
+    $qlSides = @()
+    foreach($qlLoc in @("backupvale","bashford","cronmarch","nullhaven","foreachfalls","cachegrove","firewallkeep","syslogxing","kernelhold","registry","terminus","sysv")){
+        $qlSq = Get-TownQuest $qlLoc
+        if(-not $qlSq){ continue }
+        $qlStg = Get-QuestStage $qlSq.Id
+        if($qlStg -ge 100000 -and $qlStg -ne 999999){
+            $qlSides += @{ Q = $qlSq; Loc = $qlLoc }
+        }
+    }
+    $active = @()
+    if($script:Quests){ $active = @($script:Quests | Where-Object { -not $_.TurnedIn }) }
+    if(-not $qlStory -and $qlSides.Count -eq 0 -and $active.Count -eq 0){
         Write-CL "  No active quests. Visit the Quest Board in town to accept some." "DarkGray"
         Write-Host ""
         Wait-Enter
         return
     }
-
-    $active = @($script:Quests | Where-Object { -not $_.TurnedIn })
+    if($qlStory){
+        $qlPhase = $qlSt % 10
+        if($qlPhase -eq 0){
+            $qlWhere = "Helpdesk"
+            if($qlMq.Where -ne "town"){ $qlWhere = (Get-WorldLocation $qlMq.Where).Name }
+            $qlRow = "the trail leads to $qlWhere"
+        } else {
+            $qlProg = Get-MainQuestProgress $qlMq
+            if($qlProg -lt 0){ $qlProg = 0 }
+            if($qlProg -gt $qlMq.Need){ $qlProg = $qlMq.Need }
+            $qlRow = "$qlProg/$($qlMq.Need)"
+            if($qlProg -ge $qlMq.Need){ $qlRow = $qlRow + " - READY at the town [!]" }
+        }
+        Write-C "  [!] " "Red"
+        Write-C $qlMq.Title "White"
+        Write-C "  " "DarkGray"
+        Write-CL $qlRow "Red"
+        Write-Host ""
+    }
+    foreach($qlS in $qlSides){
+        $qlTown = (Get-WorldLocation $qlS.Loc).Name
+        Write-C "  [*] " "Magenta"
+        Write-C $qlS.Q.Name "White"
+        Write-CL "  ($qlTown - advance at its [*])" "DarkGray"
+    }
+    if($qlSides.Count -gt 0){ Write-Host "" }
     if($active.Count -eq 0){
-        Write-CL "  All quests turned in! Visit the Quest Board for new ones." "DarkGray"
+        Write-CL "  No board bounties held. Grab some at the Quest Board in town." "DarkGray"
         Write-Host ""
         Wait-Enter
         return
